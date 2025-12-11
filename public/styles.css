@@ -264,7 +264,6 @@ main {
 
 .compliant-card {
     background: #f5f5f5;
-    border-left: 4px solid #000000;
     padding: 20px;
     border-radius: 4px;
     margin-bottom: 15px;
@@ -281,11 +280,11 @@ main {
     content: "✓ ";
     font-weight: bold;
     margin-right: 8px;
+    color: #000000;
 }
 
 .non-compliant-card {
     background: #ffffff;
-    border-left: 4px solid #000000;
     padding: 20px;
     border-radius: 4px;
     margin-bottom: 15px;
