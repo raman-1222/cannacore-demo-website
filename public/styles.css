@@ -6,10 +6,10 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #fafafa;
     min-height: 100vh;
     padding: 20px;
-    color: #333;
+    color: #1a1a1a;
 }
 
 .container {
@@ -19,14 +19,13 @@ body {
 
 header {
     text-align: center;
-    color: white;
+    color: #000000;
     margin-bottom: 40px;
 }
 
 header h1 {
     font-size: 2.5rem;
     margin-bottom: 10px;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .subtitle {
@@ -35,10 +34,11 @@ header h1 {
 }
 
 main {
-    background: white;
-    border-radius: 20px;
+    background: #ffffff;
+    border-radius: 8px;
     padding: 40px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .upload-section {
@@ -48,44 +48,44 @@ main {
 .upload-section h2 {
     font-size: 1.5rem;
     margin-bottom: 15px;
-    color: #333;
+    color: #000000;
 }
 
 .upload-area {
-    border: 3px dashed #d0d0d0;
-    border-radius: 12px;
+    border: 2px dashed #d0d0d0;
+    border-radius: 8px;
     padding: 40px;
     text-align: center;
     cursor: pointer;
     transition: all 0.3s ease;
-    background: #f8f9fa;
+    background: #fafafa;
 }
 
 .upload-area:hover {
-    border-color: #667eea;
-    background: #f0f2ff;
+    border-color: #333333;
+    background: #f5f5f5;
 }
 
 .upload-area.drag-over {
-    border-color: #667eea;
-    background: #e8ebff;
+    border-color: #000000;
+    background: #f0f0f0;
     transform: scale(1.02);
 }
 
 .upload-placeholder svg {
-    color: #999;
+    color: #666666;
     margin-bottom: 15px;
 }
 
 .upload-placeholder p {
     font-size: 1.1rem;
-    color: #555;
+    color: #1a1a1a;
     margin-bottom: 5px;
 }
 
 .upload-hint {
     font-size: 0.9rem;
-    color: #999;
+    color: #666666;
 }
 
 .preview-container {
@@ -117,7 +117,7 @@ main {
     position: absolute;
     top: 5px;
     right: 5px;
-    background: rgba(255, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.8);
     color: white;
     border: none;
     border-radius: 50%;
@@ -130,7 +130,7 @@ main {
 }
 
 .remove-image:hover {
-    background: rgba(255, 0, 0, 1);
+    background: rgba(0, 0, 0, 1);
 }
 
 .pdf-preview {
@@ -138,15 +138,16 @@ main {
     align-items: center;
     gap: 15px;
     padding: 15px;
-    background: #f8f9fa;
+    background: #fafafa;
     border-radius: 8px;
     margin-top: 15px;
+    border: 1px solid #e0e0e0;
 }
 
 .pdf-icon {
     width: 48px;
     height: 48px;
-    background: #e74c3c;
+    background: #1a1a1a;
     color: white;
     display: flex;
     align-items: center;
@@ -161,17 +162,17 @@ main {
 
 .pdf-info strong {
     display: block;
-    color: #333;
+    color: #1a1a1a;
     margin-bottom: 3px;
 }
 
 .pdf-info span {
-    color: #666;
+    color: #666666;
     font-size: 0.9rem;
 }
 
 .remove-pdf {
-    background: #e74c3c;
+    background: #000000;
     color: white;
     border: none;
     padding: 8px 16px;
@@ -181,16 +182,16 @@ main {
 }
 
 .remove-pdf:hover {
-    background: #c0392b;
+    background: #333333;
 }
 
 .submit-btn {
     width: 100%;
     padding: 18px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #000000;
     color: white;
     border: none;
-    border-radius: 12px;
+    border-radius: 8px;
     font-size: 1.2rem;
     font-weight: 600;
     cursor: pointer;
@@ -199,12 +200,11 @@ main {
 }
 
 .submit-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    background: #333333;
 }
 
 .submit-btn:disabled {
-    background: #ccc;
+    background: #cccccc;
     cursor: not-allowed;
 }
 
@@ -214,8 +214,8 @@ main {
 }
 
 .spinner {
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #667eea;
+    border: 4px solid #e0e0e0;
+    border-top: 4px solid #000000;
     border-radius: 50%;
     width: 50px;
     height: 50px;
@@ -229,7 +229,7 @@ main {
 }
 
 .loading-state p {
-    color: #666;
+    color: #1a1a1a;
     font-size: 1.1rem;
 }
 
@@ -242,7 +242,7 @@ main {
 .results-section h2 {
     font-size: 2rem;
     margin-bottom: 30px;
-    color: #333;
+    color: #000000;
 }
 
 .compliant-section,
@@ -251,46 +251,57 @@ main {
 }
 
 .compliant-section h3 {
-    color: #27ae60;
+    color: #000000;
     font-size: 1.5rem;
     margin-bottom: 15px;
 }
 
 .non-compliant-section h3 {
-    color: #e74c3c;
+    color: #000000;
     font-size: 1.5rem;
     margin-bottom: 15px;
 }
 
 .compliant-card {
-    background: #d4edda;
-    border-left: 5px solid #27ae60;
+    background: #f5f5f5;
+    border-left: 4px solid #000000;
     padding: 20px;
-    border-radius: 8px;
+    border-radius: 4px;
     margin-bottom: 15px;
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #000000;
 }
 
 .compliant-card p {
-    color: #155724;
+    color: #1a1a1a;
     line-height: 1.6;
 }
 
+.compliant-card::before {
+    content: "✓ ";
+    font-weight: bold;
+    margin-right: 8px;
+}
+
 .non-compliant-card {
-    background: #f8d7da;
-    border-left: 5px solid #e74c3c;
+    background: #ffffff;
+    border-left: 4px solid #000000;
     padding: 20px;
-    border-radius: 8px;
+    border-radius: 4px;
     margin-bottom: 15px;
+    border: 1px solid #d0d0d0;
+    border-left: 4px solid #000000;
 }
 
 .non-compliant-card h4 {
-    color: #721c24;
+    color: #000000;
     margin-bottom: 10px;
     font-size: 1.1rem;
+    font-weight: 600;
 }
 
 .non-compliant-card p {
-    color: #721c24;
+    color: #333333;
     margin-bottom: 8px;
     line-height: 1.6;
 }
@@ -302,9 +313,9 @@ main {
 }
 
 .error-section {
-    background: #f8d7da;
-    border: 1px solid #f5c6cb;
-    color: #721c24;
+    background: #fafafa;
+    border: 1px solid #d0d0d0;
+    color: #1a1a1a;
     padding: 20px;
     border-radius: 8px;
     margin-top: 20px;
@@ -317,7 +328,7 @@ main {
 .empty-state {
     text-align: center;
     padding: 20px;
-    color: #999;
+    color: #666666;
     font-style: italic;
 }
 
