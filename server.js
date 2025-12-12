@@ -160,12 +160,28 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const lamatic_project_id = process.env.LAMATIC_PROJECT_ID;
 
     if (!lamatic_api_key) {
+      // Cleanup uploaded files before returning
+      try {
+        await supabase.storage
+          .from('cannacore')
+          .remove(allUploadedPaths);
+      } catch (cleanupError) {
+        console.error('Failed to cleanup files after config error:', cleanupError);
+      }
       return res.status(500).json({
         error: 'LAMATIC_API_KEY is not configured'
       });
     }
 
     if (!lamatic_api_url || !lamatic_workflow_id || !lamatic_project_id) {
+      // Cleanup uploaded files before returning
+      try {
+        await supabase.storage
+          .from('cannacore')
+          .remove(allUploadedPaths);
+      } catch (cleanupError) {
+        console.error('Failed to cleanup files after config error:', cleanupError);
+      }
       return res.status(500).json({
         error: 'Lamatic API configuration is incomplete. Please check environment variables.'
       });
@@ -217,17 +233,28 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     console.log('Calling Lamatic API...');
     
     let response;
+    let apiError = null;
     try {
       response = await axios(options);
+      console.log('Lamatic API response:', JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      apiError = error;
     } finally {
       // Cleanup files from Supabase after API call (whether success or failure)
       console.log('Cleaning up files from Supabase...');
-      await supabase.storage
-        .from('cannacore')
-        .remove(allUploadedPaths);
+      try {
+        await supabase.storage
+          .from('cannacore')
+          .remove(allUploadedPaths);
+      } catch (cleanupError) {
+        console.error('Failed to cleanup files from Supabase:', cleanupError);
+      }
     }
-
-    console.log('Lamatic API response:', JSON.stringify(response.data, null, 2));
+    
+    // If API call failed, throw the error now (after cleanup)
+    if (apiError) {
+      throw apiError;
+    }
 
     // Extract the result from the API response
     const workflowResult = response.data?.data?.executeWorkflow;
