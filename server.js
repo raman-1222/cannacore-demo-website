@@ -6,6 +6,7 @@ const path = require('path');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -83,9 +84,10 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const imageUrls = [];
     const uploadedImagePaths = [];
     
-    for (const image of images) {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      const imageFilename = `image-${uniqueSuffix}${path.extname(image.originalname)}`;
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i];
+      const uniqueId = crypto.randomUUID();
+      const imageFilename = `image-${uniqueId}${path.extname(image.originalname)}`;
       const imagePath = `images/${imageFilename}`;
       
       const { data: imageData, error: imageError } = await supabase.storage
@@ -95,6 +97,16 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
         });
       
       if (imageError) {
+        // Cleanup previously uploaded images
+        if (uploadedImagePaths.length > 0) {
+          try {
+            await supabase.storage
+              .from('cannacore')
+              .remove(uploadedImagePaths);
+          } catch (cleanupError) {
+            console.error('Failed to cleanup images after error:', cleanupError);
+          }
+        }
         throw new Error(`Failed to upload image: ${imageError.message}`);
       }
       
@@ -108,8 +120,8 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     }
 
     // Upload PDF to Supabase Storage
-    const uniquePdfSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const pdfFilename = `pdf-${uniquePdfSuffix}.pdf`;
+    const uniquePdfId = crypto.randomUUID();
+    const pdfFilename = `pdf-${uniquePdfId}.pdf`;
     const pdfPath = `pdfs/${pdfFilename}`;
     
     const { data: pdfData, error: pdfError } = await supabase.storage
@@ -120,9 +132,13 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     
     if (pdfError) {
       // Cleanup already uploaded images
-      await supabase.storage
-        .from('cannacore')
-        .remove(uploadedImagePaths);
+      try {
+        await supabase.storage
+          .from('cannacore')
+          .remove(uploadedImagePaths);
+      } catch (cleanupError) {
+        console.error('Failed to cleanup images after PDF upload error:', cleanupError);
+      }
       throw new Error(`Failed to upload PDF: ${pdfError.message}`);
     }
     
