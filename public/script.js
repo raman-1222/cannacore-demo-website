@@ -215,66 +215,27 @@ uploadForm.addEventListener('submit', async (e) => {
             throw new Error(data.error || 'Failed to check compliance');
         }
 
-        // Display results
-        displayResults(data.result);
+        // Handle nested output structure
+        const result = data.result.output || data.result;
+        const compliantItems = result.compliant_items || [];
+        const nonCompliantItems = result.non_compliant_items || [];
+
+        // Store results in sessionStorage
+        sessionStorage.setItem('complianceResults', JSON.stringify({
+            compliant_items: compliantItems,
+            non_compliant_items: nonCompliantItems
+        }));
+
+        // Redirect to results page
+        window.location.href = '/results.html';
 
     } catch (error) {
         console.error('Error:', error);
         showError(error.message || 'An error occurred while checking compliance. Please try again.');
-    } finally {
         loadingState.style.display = 'none';
         uploadForm.style.display = 'block';
     }
 });
-
-// Display results
-function displayResults(result) {
-    console.log('Displaying results:', result);
-
-    const compliantList = document.getElementById('compliantList');
-    const nonCompliantList = document.getElementById('nonCompliantList');
-
-    // Clear previous results
-    compliantList.innerHTML = '';
-    nonCompliantList.innerHTML = '';
-
-    // Handle compliant items
-    if (result.compliant_items && result.compliant_items.length > 0) {
-        result.compliant_items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'compliant-card';
-            card.innerHTML = `<p>${item.summary}</p>`;
-            compliantList.appendChild(card);
-        });
-    } else {
-        compliantList.innerHTML = '<p class="empty-state">No compliant items found</p>';
-    }
-
-    // Handle non-compliant items
-    if (result.non_compliant_items && result.non_compliant_items.length > 0) {
-        result.non_compliant_items.forEach(item => {
-            const card = document.createElement('div');
-            card.className = 'non-compliant-card';
-            card.innerHTML = `
-                <h4>Issue</h4>
-                <p>${item.reason}</p>
-                <strong>Evidence:</strong>
-                <p>${item.evidence}</p>
-                <strong>Suggested Fix:</strong>
-                <p>${item.suggested_fix}</p>
-            `;
-            nonCompliantList.appendChild(card);
-        });
-    } else {
-        nonCompliantList.innerHTML = '<p class="empty-state">No non-compliant items found</p>';
-    }
-
-    // Show results section
-    resultsSection.style.display = 'block';
-    
-    // Scroll to results
-    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
 
 // Show error message
 function showError(message) {

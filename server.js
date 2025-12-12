@@ -168,6 +168,17 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       result = workflowResult.result;
     }
 
+    // Handle nested output structure
+    // The API returns { output: { compliant_items, non_compliant_items, _meta }, requestId }
+    // Extract the relevant data from the nested structure
+    let responseData = result;
+    if (result && result.output) {
+      responseData = {
+        compliant_items: result.output.compliant_items || [],
+        non_compliant_items: result.output.non_compliant_items || []
+      };
+    }
+
     // Clean up uploaded files after processing (optional)
     // Uncomment the following lines if you want to delete files after processing
     /*
@@ -185,7 +196,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     res.json({
       status: workflowResult.status,
-      result: result
+      result: responseData
     });
 
   } catch (error) {

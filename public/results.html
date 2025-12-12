@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compliance Results - Cannabis Compliance Checker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="results-page">
+            <h1 class="results-title">COMPLIANCE RESULTS</h1>
+            
+            <div class="results-divider"></div>
+            
+            <!-- Compliant Items Section -->
+            <section class="results-compliant-section">
+                <h2 class="results-section-header" id="compliantHeader">COMPLIANT ITEMS</h2>
+                <div id="compliantItemsContainer"></div>
+            </section>
+            
+            <div class="results-divider"></div>
+            
+            <!-- Non-Compliant Items Section -->
+            <section class="results-non-compliant-section">
+                <h2 class="results-section-header" id="nonCompliantHeader">NON-COMPLIANT ITEMS</h2>
+                <div id="nonCompliantItemsContainer"></div>
+            </section>
+            
+            <!-- Back Button -->
+            <button id="backButton" class="results-back-button">BACK TO UPLOAD</button>
+        </div>
+    </div>
+
+    <script>
+        // Load results from sessionStorage
+        window.addEventListener('DOMContentLoaded', () => {
+            const resultsData = sessionStorage.getItem('complianceResults');
+            
+            if (!resultsData) {
+                // No results found, redirect back to upload page
+                window.location.href = '/';
+                return;
+            }
+
+            try {
+                const results = JSON.parse(resultsData);
+                displayResults(results);
+            } catch (error) {
+                console.error('Error parsing results:', error);
+                window.location.href = '/';
+            }
+        });
+
+        function displayResults(results) {
+            const compliantContainer = document.getElementById('compliantItemsContainer');
+            const nonCompliantContainer = document.getElementById('nonCompliantItemsContainer');
+            const compliantHeader = document.getElementById('compliantHeader');
+            const nonCompliantHeader = document.getElementById('nonCompliantHeader');
+
+            // Handle compliant items
+            const compliantItems = results.compliant_items || [];
+            compliantHeader.textContent = `COMPLIANT ITEMS (${compliantItems.length})`;
+
+            if (compliantItems.length > 0) {
+                compliantItems.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'results-compliant-card';
+                    // Handle both object with summary property and string items
+                    card.textContent = typeof item === 'string' ? item : (item.summary || 'No summary available');
+                    compliantContainer.appendChild(card);
+                });
+            } else {
+                const emptyState = document.createElement('p');
+                emptyState.className = 'results-empty-state';
+                emptyState.textContent = 'No compliant items found';
+                compliantContainer.appendChild(emptyState);
+            }
+
+            // Handle non-compliant items
+            const nonCompliantItems = results.non_compliant_items || [];
+            nonCompliantHeader.textContent = `NON-COMPLIANT ITEMS (${nonCompliantItems.length})`;
+
+            if (nonCompliantItems.length > 0) {
+                nonCompliantItems.forEach(item => {
+                    const card = document.createElement('div');
+                    card.className = 'results-non-compliant-card';
+
+                    // Create reason section
+                    if (item.reason) {
+                        const reasonLabel = document.createElement('div');
+                        reasonLabel.className = 'results-field-label';
+                        reasonLabel.textContent = 'REASON';
+                        card.appendChild(reasonLabel);
+
+                        const reasonText = document.createElement('p');
+                        reasonText.className = 'results-field-text';
+                        reasonText.textContent = item.reason;
+                        card.appendChild(reasonText);
+                    }
+
+                    // Create evidence section
+                    if (item.evidence) {
+                        const evidenceLabel = document.createElement('div');
+                        evidenceLabel.className = 'results-field-label';
+                        evidenceLabel.textContent = 'EVIDENCE';
+                        card.appendChild(evidenceLabel);
+
+                        const evidenceText = document.createElement('p');
+                        evidenceText.className = 'results-field-text';
+                        evidenceText.textContent = item.evidence;
+                        card.appendChild(evidenceText);
+                    }
+
+                    // Create suggested fix section
+                    if (item.suggested_fix) {
+                        const fixLabel = document.createElement('div');
+                        fixLabel.className = 'results-field-label';
+                        fixLabel.textContent = 'SUGGESTED FIX';
+                        card.appendChild(fixLabel);
+
+                        const fixText = document.createElement('p');
+                        fixText.className = 'results-field-text';
+                        fixText.textContent = item.suggested_fix;
+                        card.appendChild(fixText);
+                    }
+
+                    nonCompliantContainer.appendChild(card);
+                });
+            } else {
+                const emptyState = document.createElement('p');
+                emptyState.className = 'results-empty-state';
+                emptyState.textContent = 'No non-compliant items found';
+                nonCompliantContainer.appendChild(emptyState);
+            }
+        }
+
+        // Back button handler
+        document.getElementById('backButton').addEventListener('click', () => {
+            // Clear the stored results
+            sessionStorage.removeItem('complianceResults');
+            // Navigate back to upload page
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>

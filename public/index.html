@@ -15,7 +15,7 @@
             <form id="uploadForm" enctype="multipart/form-data">
                 <!-- Image Upload Section -->
                 <section class="upload-section">
-                    <h2>📸 Product Images</h2>
+                    <h2>Product Images</h2>
                     <div class="upload-area" id="imageUploadArea">
                         <input type="file" id="imageInput" name="images" multiple accept="image/*" hidden>
                         <div class="upload-placeholder">
@@ -33,7 +33,7 @@
 
                 <!-- PDF Upload Section -->
                 <section class="upload-section">
-                    <h2>📄 Certificate of Analysis (COA)</h2>
+                    <h2>Certificate of Analysis (COA)</h2>
                     <div class="upload-area" id="pdfUploadArea">
                         <input type="file" id="pdfInput" name="pdf" accept="application/pdf" hidden>
                         <div class="upload-placeholder">
@@ -59,21 +59,6 @@
                 <div class="spinner"></div>
                 <p>Analyzing compliance... This may take a moment.</p>
             </div>
-
-            <!-- Results Section -->
-            <section id="resultsSection" class="results-section" style="display: none;">
-                <h2>Compliance Report</h2>
-                
-                <div id="compliantItems" class="compliant-section">
-                    <h3>✅ Compliant Items</h3>
-                    <div id="compliantList"></div>
-                </div>
-
-                <div id="nonCompliantItems" class="non-compliant-section">
-                    <h3>⚠️ Non-Compliant Items</h3>
-                    <div id="nonCompliantList"></div>
-                </div>
-            </section>
 
             <!-- Error Display -->
             <div id="errorSection" class="error-section" style="display: none;"></div>
