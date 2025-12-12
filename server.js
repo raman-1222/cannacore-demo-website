@@ -3,12 +3,17 @@ const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
 const path = require('path');
-const fs = require('fs');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Rate limiting configuration
 const apiLimiter = rateLimit({
@@ -24,22 +29,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-}
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Configure multer for file uploads - use memory storage for Supabase
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
@@ -62,9 +53,6 @@ const upload = multer({
   }
 });
 
-// Serve uploaded files
-app.use('/uploads', express.static(uploadsDir));
-
 // API endpoint to handle file uploads and compliance check
 app.post('/api/check-compliance', apiLimiter, upload.fields([
   { name: 'images', maxCount: 10 },
@@ -78,13 +66,73 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       });
     }
 
+    // Check if Supabase is configured
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({
+        error: 'Supabase configuration is missing. Please check environment variables.'
+      });
+    }
+
     const images = req.files.images;
     const pdf = req.files.pdf[0];
 
-    // Generate URLs for uploaded files
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const imageUrls = images.map(img => `${baseUrl}/uploads/${img.filename}`);
-    const pdfUrl = `${baseUrl}/uploads/${pdf.filename}`;
+    console.log('=== SUPABASE UPLOAD ===');
+    console.log('Uploading images to Supabase...');
+
+    // Upload images to Supabase Storage
+    const imageUrls = [];
+    const uploadedImagePaths = [];
+    
+    for (const image of images) {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const imageFilename = `image-${uniqueSuffix}${path.extname(image.originalname)}`;
+      const imagePath = `images/${imageFilename}`;
+      
+      const { data: imageData, error: imageError } = await supabase.storage
+        .from('cannacore')
+        .upload(imagePath, image.buffer, {
+          contentType: image.mimetype
+        });
+      
+      if (imageError) {
+        throw new Error(`Failed to upload image: ${imageError.message}`);
+      }
+      
+      // Get public URL
+      const { data: imageUrlData } = supabase.storage
+        .from('cannacore')
+        .getPublicUrl(imagePath);
+      
+      imageUrls.push(imageUrlData.publicUrl);
+      uploadedImagePaths.push(imagePath);
+    }
+
+    // Upload PDF to Supabase Storage
+    const uniquePdfSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const pdfFilename = `pdf-${uniquePdfSuffix}.pdf`;
+    const pdfPath = `pdfs/${pdfFilename}`;
+    
+    const { data: pdfData, error: pdfError } = await supabase.storage
+      .from('cannacore')
+      .upload(pdfPath, pdf.buffer, {
+        contentType: pdf.mimetype
+      });
+    
+    if (pdfError) {
+      // Cleanup already uploaded images
+      await supabase.storage
+        .from('cannacore')
+        .remove(uploadedImagePaths);
+      throw new Error(`Failed to upload PDF: ${pdfError.message}`);
+    }
+    
+    // Get public URL for PDF
+    const { data: pdfUrlData } = supabase.storage
+      .from('cannacore')
+      .getPublicUrl(pdfPath);
+    
+    const pdfUrl = pdfUrlData.publicUrl;
+    const allUploadedPaths = [...uploadedImagePaths, pdfPath];
 
     console.log('Image URLs:', imageUrls);
     console.log('PDF URL:', pdfUrl);
@@ -151,7 +199,17 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     console.log('Full Request Data:', JSON.stringify(options.data, null, 2));
     console.log('===========================');
     console.log('Calling Lamatic API...');
-    const response = await axios(options);
+    
+    let response;
+    try {
+      response = await axios(options);
+    } finally {
+      // Cleanup files from Supabase after API call (whether success or failure)
+      console.log('Cleaning up files from Supabase...');
+      await supabase.storage
+        .from('cannacore')
+        .remove(allUploadedPaths);
+    }
 
     console.log('Lamatic API response:', JSON.stringify(response.data, null, 2));
 
@@ -187,21 +245,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       };
     }
 
-    // Clean up uploaded files after processing (optional)
-    // Uncomment the following lines if you want to delete files after processing
-    /*
-    setTimeout(() => {
-      images.forEach(img => {
-        fs.unlink(path.join(uploadsDir, img.filename), (err) => {
-          if (err) console.error('Error deleting image:', err);
-        });
-      });
-      fs.unlink(path.join(uploadsDir, pdf.filename), (err) => {
-        if (err) console.error('Error deleting PDF:', err);
-      });
-    }, 60000); // Delete after 1 minute
-    */
-
     res.json({
       status: workflowResult.status,
       result: responseData
@@ -210,18 +253,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
   } catch (error) {
     console.error('Error processing compliance check:', error);
     
-    // Clean up files on error
-    if (req.files) {
-      if (req.files.images) {
-        req.files.images.forEach(img => {
-          fs.unlink(path.join(uploadsDir, img.filename), () => {});
-        });
-      }
-      if (req.files.pdf) {
-        fs.unlink(path.join(uploadsDir, req.files.pdf[0].filename), () => {});
-      }
-    }
-
     res.status(500).json({
       error: error.response?.data?.errors?.[0]?.message || error.message || 'An error occurred while processing your request'
     });
