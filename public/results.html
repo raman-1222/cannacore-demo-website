@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,27 +10,28 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <div class="results-page">
             <h1 class="results-title">COMPLIANCE RESULTS</h1>
-            
+
             <div class="results-divider"></div>
-            
+
             <!-- Compliant Items Section -->
             <section class="results-compliant-section">
                 <h2 class="results-section-header" id="compliantHeader">COMPLIANT ITEMS</h2>
                 <div id="compliantItemsContainer"></div>
             </section>
-            
+
             <div class="results-divider"></div>
-            
+
             <!-- Non-Compliant Items Section -->
             <section class="results-non-compliant-section">
                 <h2 class="results-section-header" id="nonCompliantHeader">NON-COMPLIANT ITEMS</h2>
                 <div id="nonCompliantItemsContainer"></div>
             </section>
-            
+
             <!-- Back Button -->
             <button id="backButton" class="results-back-button">BACK TO UPLOAD</button>
         </div>
@@ -39,7 +41,7 @@
         // Load results from sessionStorage
         window.addEventListener('DOMContentLoaded', () => {
             const resultsData = sessionStorage.getItem('complianceResults');
-            
+
             if (!resultsData) {
                 // No results found, redirect back to upload page
                 window.location.href = '/';
@@ -68,10 +70,33 @@
             if (compliantItems.length > 0) {
                 compliantItems.forEach(item => {
                     const card = document.createElement('div');
-                    card.className = 'results-compliant-card';
-                    // Handle both object with summary property and string items
-                    card.textContent = typeof item === 'string' ? item : (item.summary || 'No summary available');
-                    compliantContainer.appendChild(card);
+                    card.className = 'results-non-compliant-card';
+
+                    // Create reason section
+                    if (item.reason) {
+                        const reasonLabel = document.createElement('div');
+                        reasonLabel.className = 'results-field-label';
+                        reasonLabel.textContent = 'REASON';
+                        card.appendChild(reasonLabel);
+
+                        const reasonText = document.createElement('p');
+                        reasonText.className = 'results-field-text';
+                        reasonText.textContent = item.reason;
+                        card.appendChild(reasonText);
+                    }
+
+                    // Create evidence section
+                    if (item.evidence) {
+                        const evidenceLabel = document.createElement('div');
+                        evidenceLabel.className = 'results-field-label';
+                        evidenceLabel.textContent = 'EVIDENCE';
+                        card.appendChild(evidenceLabel);
+
+                        const evidenceText = document.createElement('p');
+                        evidenceText.className = 'results-field-text';
+                        evidenceText.textContent = item.evidence;
+                        card.appendChild(evidenceText);
+                    }
                 });
             } else {
                 const emptyState = document.createElement('p');
@@ -147,4 +172,5 @@
         });
     </script>
 </body>
+
 </html>
