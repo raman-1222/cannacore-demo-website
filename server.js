@@ -121,7 +121,8 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     // Upload PDF to Supabase Storage
     const uniquePdfId = crypto.randomUUID();
-    const pdfFilename = `pdf-${uniquePdfId}.pdf`;
+    const pdfExtension = path.extname(pdf.originalname) || '.pdf';
+    const pdfFilename = `pdf-${uniquePdfId}${pdfExtension}`;
     const pdfPath = `pdfs/${pdfFilename}`;
     
     const { data: pdfData, error: pdfError } = await supabase.storage
@@ -241,13 +242,16 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       apiError = error;
     } finally {
       // Cleanup files from Supabase after API call (whether success or failure)
-      console.log('Cleaning up files from Supabase...');
-      try {
-        await supabase.storage
-          .from('cannacore')
-          .remove(allUploadedPaths);
-      } catch (cleanupError) {
-        console.error('Failed to cleanup files from Supabase:', cleanupError);
+      // Only attempt cleanup if files were uploaded
+      if (allUploadedPaths && allUploadedPaths.length > 0) {
+        console.log('Cleaning up files from Supabase...');
+        try {
+          await supabase.storage
+            .from('cannacore')
+            .remove(allUploadedPaths);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup files from Supabase:', cleanupError);
+        }
       }
     }
     
