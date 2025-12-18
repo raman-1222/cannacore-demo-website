@@ -4,69 +4,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Compliance Results</title>
+    <title>Compliance Results - Cannabis Compliance Checker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
+    <div class="container">
+        <div class="results-page">
+            <h1 class="results-title">COMPLIANCE RESULTS</h1>
 
-    <h1>COMPLIANCE RESULTS</h1>
-    <h2 id="headerCount">NON-COMPLIANT ITEMS (0)</h2>
+            <div class="results-divider"></div>
 
-    <div id="issuesContainer"></div>
+            <!-- Non-Compliant Items Section -->
+            <section class="results-non-compliant-section">
+                <h2 class="results-section-header" id="nonCompliantHeader">NON-COMPLIANT ITEMS</h2>
+                <div id="nonCompliantItemsContainer"></div>
+            </section>
 
-    <button onclick="goBack()">Back</button>
+            <!-- Back Button -->
+            <button id="backButton" class="results-back-button">BACK TO UPLOAD</button>
+        </div>
+    </div>
 
     <script>
-        window.addEventListener("DOMContentLoaded", () => {
-            const stored = sessionStorage.getItem("complianceResults");
-            if (!stored) return;
+        window.addEventListener('DOMContentLoaded', () => {
+            const resultsData = sessionStorage.getItem('complianceResults');
 
-            const parsed = JSON.parse(stored);
-            const issues = parsed.issues || [];
-
-            console.log("Loaded issues:", issues);
-
-            document.getElementById("headerCount").textContent =
-                `NON-COMPLIANT ITEMS (${issues.length})`;
-
-            const container = document.getElementById("issuesContainer");
-
-            if (issues.length === 0) {
-                container.innerHTML = "<p>No issues found</p>";
+            if (!resultsData) {
+                console.log("No results data found in sessionStorage.");
+                window.location.href = '/';
                 return;
             }
 
-            issues.forEach(item => {
+            try {
+                const parsed = JSON.parse(resultsData);
+                console.log("Parsed results data:", parsed);
+                const issues =
+                    parsed?.data?.executeWorkflow?.result?.output?.issues ||
+                    parsed?.executeWorkflow?.result?.output?.issues ||
+                    parsed?.result?.output?.issues ||
+                    parsed?.output?.issues ||
+                    parsed?.issues ||
+                    [];
+
+
+                displayResults(issues);
+            } catch (error) {
+                console.error("Error parsing:", error);
+                window.location.href = '/';
+            }
+        });
+
+        function displayResults(issues) {
+            const container = document.getElementById('nonCompliantItemsContainer');
+            const header = document.getElementById('nonCompliantHeader');
+
+            header.textContent = `NON-COMPLIANT ITEMS (${issues.length})`;
+
+            if (issues.length === 0) {
+                container.innerHTML = `<p>No non-compliant issues found</p>`;
+                return;
+            }
+
+            issues.forEach(issue => {
                 const card = document.createElement("div");
                 card.className = "results-non-compliant-card";
 
                 const title = document.createElement("p");
-                title.textContent = item.issue_identified;
+                title.textContent = issue.issue_identified;
                 title.style.color = "red";
                 title.style.fontWeight = "bold";
                 card.appendChild(title);
 
-                if (item.evidence) {
-                    const e = document.createElement("p");
-                    e.textContent = `Evidence: ${item.evidence}`;
-                    card.appendChild(e);
+                if (issue.evidence) {
+                    const label = document.createElement("p");
+                    label.textContent = "Evidence:";
+                    label.style.fontWeight = "bold";
+                    card.appendChild(label);
+
+                    const value = document.createElement("p");
+                    value.textContent = issue.evidence;
+                    card.appendChild(value);
                 }
 
-                if (item.suggested_fix) {
-                    const f = document.createElement("p");
-                    f.textContent = `Suggested fix: ${item.suggested_fix}`;
-                    card.appendChild(f);
+                if (issue.suggested_fix) {
+                    const label = document.createElement("p");
+                    label.textContent = "Suggested Fix:";
+                    label.style.fontWeight = "bold";
+                    card.appendChild(label);
+
+                    const value = document.createElement("p");
+                    value.textContent = issue.suggested_fix;
+                    card.appendChild(value);
                 }
 
                 container.appendChild(card);
             });
-        });
-
-        function goBack() {
-            sessionStorage.removeItem("complianceResults");
-            window.location.href = "/";
         }
+
+        document.getElementById('backButton').addEventListener('click', () => {
+            sessionStorage.removeItem('complianceResults');
+            window.location.href = '/';
+        });
     </script>
 
 </body>
