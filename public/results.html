@@ -18,14 +18,6 @@
 
             <div class="results-divider"></div>
 
-            <!-- Compliant Items Section -->
-            <section class="results-compliant-section">
-                <h2 class="results-section-header" id="compliantHeader">COMPLIANT ITEMS</h2>
-                <div id="compliantItemsContainer"></div>
-            </section>
-
-            <div class="results-divider"></div>
-
             <!-- Non-Compliant Items Section -->
             <section class="results-non-compliant-section">
                 <h2 class="results-section-header" id="nonCompliantHeader">NON-COMPLIANT ITEMS</h2>
@@ -38,12 +30,10 @@
     </div>
 
     <script>
-        // Load results from sessionStorage
         window.addEventListener('DOMContentLoaded', () => {
             const resultsData = sessionStorage.getItem('complianceResults');
 
             if (!resultsData) {
-                // No results found, redirect back to upload page
                 window.location.href = '/';
                 return;
             }
@@ -52,41 +42,33 @@
                 const results = JSON.parse(resultsData);
                 displayResults(results);
             } catch (error) {
-                console.error('Error parsing results:', error);
+                console.error("Error parsing results:", error);
                 window.location.href = '/';
             }
         });
 
         function displayResults(results) {
-            const compliantContainer = document.getElementById('compliantItemsContainer');
             const nonCompliantContainer = document.getElementById('nonCompliantItemsContainer');
-            const compliantHeader = document.getElementById('compliantHeader');
             const nonCompliantHeader = document.getElementById('nonCompliantHeader');
 
-            // Handle compliant items
-            const compliantItems = results.compliant_items || [];
-            compliantHeader.textContent = `COMPLIANT ITEMS (${compliantItems.length})`;
+            const issues = results.issues || [];
+            nonCompliantHeader.textContent = `NON-COMPLIANT ITEMS (${issues.length})`;
 
-            if (compliantItems.length > 0) {
-                compliantItems.forEach(item => {
+            if (issues.length > 0) {
+                issues.forEach(issue => {
                     const card = document.createElement('div');
                     card.className = 'results-non-compliant-card';
 
-                    // Create reason section
-                    if (item.reason) {
-                        const reasonLabel = document.createElement('div');
-                        reasonLabel.className = 'results-field-label';
-                        reasonLabel.textContent = 'REASON';
-                        card.appendChild(reasonLabel);
+                    // ISSUE IDENTIFIED (red bold text)
+                    const issueTitle = document.createElement('p');
+                    issueTitle.textContent = issue.issue_identified;
+                    issueTitle.style.color = '#FF0000';
+                    issueTitle.style.fontWeight = 'bold';
+                    issueTitle.style.fontSize = '1rem';
+                    card.appendChild(issueTitle);
 
-                        const reasonText = document.createElement('p');
-                        reasonText.className = 'results-field-text';
-                        reasonText.textContent = item.reason;
-                        card.appendChild(reasonText);
-                    }
-
-                    // Create evidence section
-                    if (item.evidence) {
+                    // Evidence section
+                    if (issue.evidence) {
                         const evidenceLabel = document.createElement('div');
                         evidenceLabel.className = 'results-field-label';
                         evidenceLabel.textContent = 'EVIDENCE';
@@ -94,54 +76,12 @@
 
                         const evidenceText = document.createElement('p');
                         evidenceText.className = 'results-field-text';
-                        evidenceText.textContent = item.evidence;
-                        card.appendChild(evidenceText);
-                    }
-                });
-            } else {
-                const emptyState = document.createElement('p');
-                emptyState.className = 'results-empty-state';
-                emptyState.textContent = 'No compliant items found';
-                compliantContainer.appendChild(emptyState);
-            }
-
-            // Handle non-compliant items
-            const nonCompliantItems = results.non_compliant_items || [];
-            nonCompliantHeader.textContent = `NON-COMPLIANT ITEMS (${nonCompliantItems.length})`;
-
-            if (nonCompliantItems.length > 0) {
-                nonCompliantItems.forEach(item => {
-                    const card = document.createElement('div');
-                    card.className = 'results-non-compliant-card';
-
-                    // Create reason section
-                    if (item.reason) {
-                        const reasonLabel = document.createElement('div');
-                        reasonLabel.className = 'results-field-label';
-                        reasonLabel.textContent = 'REASON';
-                        card.appendChild(reasonLabel);
-
-                        const reasonText = document.createElement('p');
-                        reasonText.className = 'results-field-text';
-                        reasonText.textContent = item.reason;
-                        card.appendChild(reasonText);
-                    }
-
-                    // Create evidence section
-                    if (item.evidence) {
-                        const evidenceLabel = document.createElement('div');
-                        evidenceLabel.className = 'results-field-label';
-                        evidenceLabel.textContent = 'EVIDENCE';
-                        card.appendChild(evidenceLabel);
-
-                        const evidenceText = document.createElement('p');
-                        evidenceText.className = 'results-field-text';
-                        evidenceText.textContent = item.evidence;
+                        evidenceText.textContent = issue.evidence;
                         card.appendChild(evidenceText);
                     }
 
-                    // Create suggested fix section
-                    if (item.suggested_fix) {
+                    // Suggested Fix
+                    if (issue.suggested_fix) {
                         const fixLabel = document.createElement('div');
                         fixLabel.className = 'results-field-label';
                         fixLabel.textContent = 'SUGGESTED FIX';
@@ -149,7 +89,7 @@
 
                         const fixText = document.createElement('p');
                         fixText.className = 'results-field-text';
-                        fixText.textContent = item.suggested_fix;
+                        fixText.textContent = issue.suggested_fix;
                         card.appendChild(fixText);
                     }
 
@@ -158,19 +98,17 @@
             } else {
                 const emptyState = document.createElement('p');
                 emptyState.className = 'results-empty-state';
-                emptyState.textContent = 'No non-compliant items found';
+                emptyState.textContent = 'No non-compliant issues found';
                 nonCompliantContainer.appendChild(emptyState);
             }
         }
 
-        // Back button handler
         document.getElementById('backButton').addEventListener('click', () => {
-            // Clear the stored results
             sessionStorage.removeItem('complianceResults');
-            // Navigate back to upload page
             window.location.href = '/';
         });
     </script>
+
 </body>
 
 </html>
