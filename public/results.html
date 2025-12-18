@@ -30,14 +30,12 @@
     </div>
 
     <script>
-        window.addEventListener('DOMContentLoaded', () => {
-
+        window.addEventListener("DOMContentLoaded", () => {
             const stored = sessionStorage.getItem("complianceResults");
-            console.log("RAW sessionStorage:", stored);
 
             if (!stored) {
-                console.log("Missing results, redirecting...");
-                window.location.href = '/';
+                console.log("No session data found. Redirecting.");
+                window.location.href = "/";
                 return;
             }
 
@@ -45,68 +43,71 @@
             try {
                 parsed = JSON.parse(stored);
             } catch (e) {
-                console.error("JSON parse failed", e);
-                window.location.href = '/';
+                console.error("Corrupt session data. Redirecting.");
+                window.location.href = "/";
                 return;
             }
 
+            console.log("Loaded results:", parsed);
+
             const issues = parsed.issues || [];
-            console.log("Parsed issues:", issues);
 
             renderIssues(issues);
         });
 
-        function renderIssues(issues) {
 
-            const container = document.getElementById('nonCompliantItemsContainer');
-            const header = document.getElementById('nonCompliantHeader');
+        function renderIssues(issues) {
+            const container = document.getElementById("nonCompliantItemsContainer");
+            const header = document.getElementById("nonCompliantHeader");
 
             header.textContent = `NON-COMPLIANT ITEMS (${issues.length})`;
 
             if (issues.length === 0) {
-                container.innerHTML = "<p>No non-compliant issues found.</p>";
+                container.innerHTML = `<p>No non-compliant issues found</p>`;
                 return;
             }
 
             issues.forEach(issue => {
-
                 const card = document.createElement("div");
                 card.className = "results-non-compliant-card";
 
-                // title (red text)
-                const title = document.createElement("p");
-                title.textContent = issue.issue_identified;
-                title.style.color = "red";
-                title.style.fontWeight = "bold";
-                card.appendChild(title);
+                // Issue
+                const issueTxt = document.createElement("p");
+                issueTxt.textContent = issue.issue_identified;
+                issueTxt.style.color = "red";
+                issueTxt.style.fontWeight = "bold";
+                issueTxt.style.marginBottom = "8px";
+                card.appendChild(issueTxt);
 
-                // evidence
+                // Evidence
                 if (issue.evidence) {
-                    const lab = document.createElement("p");
-                    lab.style.fontWeight = "bold";
-                    lab.textContent = "Evidence:";
-                    card.appendChild(lab);
+                    const label = document.createElement("p");
+                    label.textContent = "Evidence:";
+                    label.style.fontWeight = "600";
+                    card.appendChild(label);
 
-                    const ev = document.createElement("p");
-                    ev.textContent = issue.evidence;
-                    card.appendChild(ev);
+                    const txt = document.createElement("p");
+                    txt.textContent = issue.evidence;
+                    txt.style.marginBottom = "8px";
+                    card.appendChild(txt);
                 }
 
-                // suggested fix
+                // Suggested fix
                 if (issue.suggested_fix) {
-                    const lab = document.createElement("p");
-                    lab.style.fontWeight = "bold";
-                    lab.textContent = "Suggested Fix:";
-                    card.appendChild(lab);
+                    const label = document.createElement("p");
+                    label.textContent = "Suggested Fix:";
+                    label.style.fontWeight = "600";
+                    card.appendChild(label);
 
-                    const fix = document.createElement("p");
-                    fix.textContent = issue.suggested_fix;
-                    card.appendChild(fix);
+                    const txt = document.createElement("p");
+                    txt.textContent = issue.suggested_fix;
+                    card.appendChild(txt);
                 }
 
                 container.appendChild(card);
             });
         }
+
 
         document.getElementById("backButton").addEventListener("click", () => {
             sessionStorage.removeItem("complianceResults");

@@ -215,18 +215,30 @@ uploadForm.addEventListener('submit', async (e) => {
             throw new Error(data.error || 'Failed to check compliance');
         }
 
-       const issues =
-    result?.output?.issues ||
-    result?.issues ||
-    [];
+       // Extract issues array from response
+let issues = [];
 
-// Save correctly
+if (data?.data?.executeWorkflow?.result?.output?.issues) {
+    issues = data.data.executeWorkflow.result.output.issues;
+} else if (data?.result?.output?.issues) {
+    issues = data.result.output.issues;
+} else if (data?.output?.issues) {
+    issues = data.output.issues;
+} else if (data?.issues) {
+    issues = data.issues;
+}
+
+console.log("Normalized Issues:", issues);
+
+// Save ONLY issues array to sessionStorage
 sessionStorage.setItem(
     "complianceResults",
     JSON.stringify({ issues })
 );
 
-console.log("saved successfully:", sessionStorage.getItem("complianceResults"));
+// redirect
+window.location.href = "/results.html";
+
 
         // Redirect to results page
         window.location.href = '/results.html';
