@@ -219,8 +219,8 @@ uploadForm.addEventListener('submit', async (e) => {
         const result = data.result.output || data.result;
         const compliantItems = result.compliant_items || [];
         const nonCompliantItems = result.non_compliant_items || [];
-
-        // Store results in sessionStorage
+         
+        console.log(result)
         sessionStorage.setItem('complianceResults', JSON.stringify({
             compliant_items: compliantItems,
             non_compliant_items: nonCompliantItems
