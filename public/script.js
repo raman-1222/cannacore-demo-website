@@ -143,7 +143,7 @@ function formatFileSize(bytes) {
 }
 
 function updateSubmitButton() {
-    submitBtn.disabled = !(selectedImages.length > 0 && selectedPdf);
+    submitBtn.disabled = !(selectedImages.length > 0); // Only images required, PDF is optional
 }
 
 // HANDLE SUBMIT
@@ -154,7 +154,10 @@ uploadForm.addEventListener('submit', async e => {
 
     const formData = new FormData();
     selectedImages.forEach(img => formData.append("images", img));
-    formData.append("pdf", selectedPdf);
+    // PDF is optional - only add if selected
+    if (selectedPdf) {
+        formData.append("pdf", selectedPdf);
+    }
 
     uploadForm.style.display = "none";
     loadingState.style.display = "block";

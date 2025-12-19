@@ -60,10 +60,10 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
   { name: 'pdf', maxCount: 1 }
 ]), async (req, res) => {
   try {
-    // Validate uploads
-    if (!req.files || !req.files.images || !req.files.pdf) {
+    // Validate uploads - only images are required, PDF is optional
+    if (!req.files || !req.files.images) {
       return res.status(400).json({
-        error: 'Please upload both images and a PDF file'
+        error: 'Please upload product images'
       });
     }
 
@@ -75,7 +75,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     }
 
     const images = req.files.images;
-    const pdf = req.files.pdf[0];
+    const pdf = req.files.pdf ? req.files.pdf[0] : null;
 
     console.log('=== SUPABASE UPLOAD ===');
     console.log('Uploading images to Supabase...');
@@ -119,37 +119,44 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       uploadedImagePaths.push(imagePath);
     }
 
-    // Upload PDF to Supabase Storage
-    const uniquePdfId = crypto.randomUUID();
-    const pdfExtension = path.extname(pdf.originalname) || '.pdf';
-    const pdfFilename = `pdf-${uniquePdfId}${pdfExtension}`;
-    const pdfPath = `pdfs/${pdfFilename}`;
+    // Upload PDF to Supabase Storage (optional)
+    let pdfUrl = 'https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884';
+    const allUploadedPaths = [...uploadedImagePaths];
     
-    const { data: pdfData, error: pdfError } = await supabase.storage
-      .from('cannacore')
-      .upload(pdfPath, pdf.buffer, {
-        contentType: pdf.mimetype
-      });
-    
-    if (pdfError) {
-      // Cleanup already uploaded images
-      try {
-        await supabase.storage
-          .from('cannacore')
-          .remove(uploadedImagePaths);
-      } catch (cleanupError) {
-        console.error('Failed to cleanup images after PDF upload error:', cleanupError);
+    if (pdf) {
+      const uniquePdfId = crypto.randomUUID();
+      const pdfExtension = path.extname(pdf.originalname) || '.pdf';
+      const pdfFilename = `pdf-${uniquePdfId}${pdfExtension}`;
+      const pdfPath = `pdfs/${pdfFilename}`;
+      
+      const { data: pdfData, error: pdfError } = await supabase.storage
+        .from('cannacore')
+        .upload(pdfPath, pdf.buffer, {
+          contentType: pdf.mimetype
+        });
+      
+      if (pdfError) {
+        // Cleanup already uploaded images
+        try {
+          await supabase.storage
+            .from('cannacore')
+            .remove(uploadedImagePaths);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup images after PDF upload error:', cleanupError);
+        }
+        throw new Error(`Failed to upload PDF: ${pdfError.message}`);
       }
-      throw new Error(`Failed to upload PDF: ${pdfError.message}`);
+      
+      // Get public URL for PDF
+      const { data: pdfUrlData } = supabase.storage
+        .from('cannacore')
+        .getPublicUrl(pdfPath);
+      
+      pdfUrl = pdfUrlData.publicUrl;
+      allUploadedPaths.push(pdfPath);
+    } else {
+      console.log('No PDF uploaded - using default COA URL');
     }
-    
-    // Get public URL for PDF
-    const { data: pdfUrlData } = supabase.storage
-      .from('cannacore')
-      .getPublicUrl(pdfPath);
-    
-    const pdfUrl = pdfUrlData.publicUrl;
-    const allUploadedPaths = [...uploadedImagePaths, pdfPath];
 
     console.log('Image URLs:', imageUrls);
     console.log('PDF URL:', pdfUrl);
