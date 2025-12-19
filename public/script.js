@@ -151,8 +151,6 @@ uploadForm.addEventListener('submit', async e => {
     e.preventDefault();
     resultsSection.innerHTML = "";
     errorSection.innerHTML = "";
-    resultsSection.style.display = "none";
-    errorSection.style.display = "none";
 
     const formData = new FormData();
     selectedImages.forEach(img => formData.append("images", img));
@@ -166,38 +164,41 @@ uploadForm.addEventListener('submit', async e => {
             method: "POST",
             body: formData
         });
-
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status} ${response.statusText}`);
-        }
-
         const json = await response.json();
-        console.log("Full API Response:", json);
 
-        // Correct path for Lamatic.ai GraphQL response
-        const issues = json?.data?.executeWorkflow?.result?.output?.issues || [];
-
-        loadingState.style.display = "none";
-
-        if (issues.length === 0) {
-            resultsSection.style.display = "block";
-            resultsSection.innerHTML = `
-                <h2>COMPLIANCE CHECK COMPLETE</h2>
-                <p style="color: green; font-weight: bold; font-size: 1.5em; text-align: center; margin-top: 2rem;">
-                    ✅ No non-compliant issues found!
-                </p>
-                <p style="text-align: center; margin-top: 1rem;">
-                    Your product images and COA appear to be fully compliant.
-                </p>`;
+        // --------- Robust issue extraction -----------
+        let issues = [];
+        if (json?.result?.output?.issues) {
+            issues = json.result.output.issues;
+        } else if (json?.result?.issues) {
+            issues = json.result.issues;
+        } else if (json?.issues) {
+            issues = json.issues;
         } else {
-            displayIssues(issues);
+            // Deep search fallback
+            const search = obj => {
+                if (!obj || typeof obj !== 'object') return [];
+                if (Array.isArray(obj.issues)) return obj.issues;
+                for (const key in obj) {
+                    const found = search(obj[key]);
+                    if (found.length) return found;
+                }
+                return [];
+            };
+            issues = search(json);
         }
+        // --------- Display results -----------
+        loadingState.style.display = "none";
+        displayIssues(issues);
 
+        if (!issues || issues.length === 0) {
+            resultsSection.style.display = "block";
+            resultsSection.innerHTML = "<p>No non-compliant issues found</p>";
+        }
     } catch (err) {
-        console.error("Error:", err);
         loadingState.style.display = "none";
         uploadForm.style.display = "block";
-        showError("Failed to analyze compliance: " + (err.message || "Unknown error"));
+        showError(err.message);
     }
 });
 
@@ -206,14 +207,17 @@ function displayIssues(issues) {
     resultsSection.style.display = "block";
     resultsSection.innerHTML = `<h2>NON-COMPLIANT ITEMS (${issues.length})</h2>`;
 
+    if (issues.length === 0) {
+        resultsSection.innerHTML += "<p>No non-compliant issues found</p>";
+        return;
+    }
+
     issues.forEach(issue => {
         const card = document.createElement("div");
         card.className = "results-card";
 
         card.innerHTML = `
-            <p style="color:red; font-weight:bold; font-size:1.1em; margin-bottom:0.8rem;">
-                ${issue.issue_identified}
-            </p>
+            <p style="color:red;font-weight:bold;">${issue.issue_identified || issue.reason || "Unspecified issue"}</p>
             <p><strong>Evidence:</strong> ${issue.evidence || "None provided"}</p>
             <p><strong>Suggested Fix:</strong> ${issue.suggested_fix || "None provided"}</p>
         `;
@@ -223,5 +227,5 @@ function displayIssues(issues) {
 
 function showError(msg) {
     errorSection.style.display = "block";
-    errorSection.innerHTML = `<p style="color: red; font-weight: bold;">Error: ${msg}</p>`;
+    errorSection.innerHTML = `<p>${msg}</p>`;
 }
