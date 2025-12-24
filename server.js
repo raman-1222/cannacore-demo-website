@@ -11,6 +11,18 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Helper function to verify URL is accessible
+async function verifyUrlAccessible(url) {
+  try {
+    const response = await axios.head(url, { timeout: 5000 });
+    console.log(`URL verified: ${url} - Status ${response.status}`);
+    return response.status === 200;
+  } catch (error) {
+    console.error(`URL verification failed for ${url}:`, error.message);
+    return false;
+  }
+}
+
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -215,6 +227,29 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       allImageUrls.push(labelsPdfUrl);
       console.log('Added labels PDF URL to image URLs array');
     }
+
+    // Verify all URLs are accessible before calling API
+    console.log('Verifying URL accessibility...');
+    const allUrlsToVerify = [...allImageUrls, pdfUrl];
+    for (const url of allUrlsToVerify) {
+      if (url && url !== 'https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884') {
+        const isAccessible = await verifyUrlAccessible(url);
+        if (!isAccessible) {
+          // Cleanup files before returning error
+          try {
+            await supabase.storage
+              .from('cannacore')
+              .remove(allUploadedPaths);
+          } catch (cleanupError) {
+            console.error('Failed to cleanup files:', cleanupError);
+          }
+          return res.status(400).json({
+            error: `Uploaded file is not accessible at ${url}. Please try uploading again.`
+          });
+        }
+      }
+    }
+    console.log('All URLs verified successfully');
 
     // Prepare Lamatic API request
     const lamatic_api_key = process.env.LAMATIC_API_KEY;
