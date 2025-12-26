@@ -314,13 +314,13 @@ uploadForm.addEventListener('submit', async e => {
         // Display Header
         displayHeader(companyName, productType, date, time, headerOutput, overallStatus, allProductNames, totalConcerns);
         
-        // Display COA Results
-        console.log('Calling displayCOA with', coaData.length, 'items');
-        displayCOA(coaData);
-        
         // Display Labels Results
         console.log('Calling displayLabels with', labelsData.length, 'items');
         displayLabels(labelsData);
+        
+        // Display COA Results
+        console.log('Calling displayCOA with', coaData.length, 'items');
+        displayCOA(coaData);
     } catch (err) {
         loadingState.style.display = "none";
         uploadForm.style.display = "block";
