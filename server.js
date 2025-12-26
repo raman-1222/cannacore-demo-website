@@ -341,21 +341,19 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       console.error('Lamatic API Error - Data:', JSON.stringify(error.response?.data, null, 2));
       apiError = error;
     } finally {
-      // TODO: Cleanup files from Supabase after API call (disabled for testing)
+      // Cleanup files from Supabase after API call
       // Only attempt cleanup if files were uploaded
-      /*
       if (allUploadedPaths && allUploadedPaths.length > 0) {
         console.log('Cleaning up files from Supabase...');
         try {
           await supabase.storage
             .from('cannacore')
             .remove(allUploadedPaths);
+          console.log('Files successfully cleaned up from Supabase');
         } catch (cleanupError) {
           console.error('Failed to cleanup files from Supabase:', cleanupError);
         }
       }
-      */
-      console.log('File cleanup disabled for testing. Files remain in Supabase at:', allUploadedPaths);
     }
     
     // If API call failed, throw the error now (after cleanup)

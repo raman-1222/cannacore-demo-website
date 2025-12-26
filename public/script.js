@@ -229,28 +229,90 @@ uploadForm.addEventListener('submit', async e => {
         console.log('Full API Response:', json);
 
         // --------- Extract data from API response -----------
-        const output = json?.result?.output || {};
         const result = json?.result || {};
         
-        console.log('Output object:', output);
         console.log('Result object:', result);
         
-        const issues = output.issues || [];
+        const headerOutput = result.output || "";
+        const companyName = result.company_name || "";
+        const productType = result.product_type || "";
+        const date = result.date || "";
+        const time = result.time || "";
         const coaData = result.coa?.output || [];
         const labelsData = result.labels?.output || [];
 
-        console.log('Extracted Issues:', issues);
+        console.log('Extracted Header Output:', headerOutput);
         console.log('Extracted COA Data:', coaData);
         console.log('Extracted Labels Data:', labelsData);
+
+        // --------- Collect all product names from labels only (deduplicate and remove substrings) -----------
+        const productNamesMap = new Map(); // Use Map to deduplicate case-insensitively
+        labelsData.forEach(item => {
+            if (item && item.product_name && Array.isArray(item.product_name)) {
+                item.product_name.forEach(name => {
+                    const lowerName = name.toLowerCase();
+                    if (!productNamesMap.has(lowerName)) {
+                        productNamesMap.set(lowerName, name);
+                    }
+                });
+            }
+        });
+        
+        // Remove product names that are substrings of other product names
+        const finalProductNames = Array.from(productNamesMap.values()).filter((name, index, arr) => {
+            return !arr.some((otherName, otherIndex) => {
+                return index !== otherIndex && otherName.toLowerCase().includes(name.toLowerCase());
+            });
+        });
+        
+        const allProductNames = finalProductNames.join(", ") || "";
+
+        // --------- Calculate overall compliance status and count concerns -----------
+        let hasNonCompliant = false;
+        let hasHumanReview = false;
+        let nonCompliantCount = 0;
+        let humanReviewCount = 0;
+        
+        // Check COA data
+        coaData.forEach(item => {
+            if (item && item.hasOwnProperty('compliant')) {
+                if (item.compliant === false) {
+                    hasNonCompliant = true;
+                    nonCompliantCount++;
+                }
+            }
+        });
+        
+        // Check Labels data
+        labelsData.forEach(item => {
+            if (item && item.hasOwnProperty('compliant')) {
+                if (item.compliant === false || item.compliant === "false") {
+                    hasNonCompliant = true;
+                    nonCompliantCount++;
+                } else if (item.compliant === "human_review") {
+                    hasHumanReview = true;
+                    humanReviewCount++;
+                }
+            }
+        });
+        
+        let overallStatus = "COMPLIANT";
+        let totalConcerns = 0;
+        if (hasNonCompliant) {
+            overallStatus = "NON-COMPLIANT";
+            totalConcerns = nonCompliantCount + humanReviewCount;
+        } else if (hasHumanReview) {
+            overallStatus = "HUMAN REVIEW";
+            totalConcerns = humanReviewCount;
+        }
 
         // --------- Display results -----------
         loadingState.style.display = "none";
         resultsSection.style.display = "block";
         resultsSection.innerHTML = ""; // Clear previous results
         
-        // Display Issues
-        console.log('Calling displayIssues with', issues.length, 'issues');
-        displayIssues(issues);
+        // Display Header
+        displayHeader(companyName, productType, date, time, headerOutput, overallStatus, allProductNames, totalConcerns);
         
         // Display COA Results
         console.log('Calling displayCOA with', coaData.length, 'items');
@@ -266,36 +328,45 @@ uploadForm.addEventListener('submit', async e => {
     }
 });
 
-// DISPLAY ISSUES ON SAME PAGE
-function displayIssues(issues) {
-    console.log('In displayIssues, issues:', issues);
-    const issuesDiv = document.createElement("div");
-    issuesDiv.className = "results-category";
-    issuesDiv.innerHTML = `<h2>NON-COMPLIANT ITEMS (${issues.length})</h2>`;
-
-    if (!issues || issues.length === 0) {
-        issuesDiv.innerHTML += "<p>No non-compliant issues found</p>";
-        resultsSection.appendChild(issuesDiv);
-        console.log('No issues to display');
-        return;
-    }
-
-    issues.forEach((issue, idx) => {
-        console.log('Processing issue', idx, issue);
-        const card = document.createElement("div");
-        card.className = "results-card";
-
-        card.innerHTML = `
-            <p style="color:red;font-weight:bold;">${issue.issue_identified || issue.reason || "Unspecified issue"}</p>
-            <p><strong>Evidence:</strong> ${issue.evidence || "None provided"}</p>
-            <p><strong>Suggested Fix:</strong> ${issue.suggested_fix || "None provided"}</p>
-            ${issue.ref ? `<p><strong>Reference:</strong> ${issue.ref}</p>` : ""}
-        `;
-        issuesDiv.appendChild(card);
-    });
+// DISPLAY HEADER
+function displayHeader(companyName, productType, date, time, output, overallStatus, allProductNames, totalConcerns) {
+    console.log('In displayHeader');
+    const headerDiv = document.createElement("div");
+    headerDiv.className = "results-category header-section";
+    headerDiv.style.borderBottom = "1px solid #ddd";
+    headerDiv.style.paddingBottom = "30px";
+    headerDiv.style.marginBottom = "40px";
     
-    resultsSection.appendChild(issuesDiv);
-    console.log('Issues section appended');
+    const productDisplay = productType ? `${productType}` : "";
+    
+    // Determine status color
+    let statusColor = "green";
+    let statusDisplay = overallStatus;
+    if (overallStatus === "NON-COMPLIANT") {
+        statusColor = "red";
+        statusDisplay = `${overallStatus} (${totalConcerns} concern${totalConcerns !== 1 ? 's' : ''})`;
+    } else if (overallStatus === "HUMAN REVIEW") {
+        statusColor = "orange";
+        statusDisplay = `${overallStatus} (${totalConcerns} concern${totalConcerns !== 1 ? 's' : ''})`;
+    }
+    
+    const dateTimeDisplay = date && time ? `${date} ${time}` : date || time || "N/A";
+    
+    headerDiv.innerHTML = `
+        <h1 style="text-align: center; font-size: 1.8rem; margin-bottom: 30px; font-weight: bold;">Label & Packaging Review</h1>
+        <div style="text-align: left;">
+            <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Jurisdiction:</strong> Florida</p>
+            <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Company Name:</strong> ${companyName || "N/A"}</p>
+            <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Product Type:</strong> ${productDisplay || "N/A"}</p>
+            ${allProductNames ? `<p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Product Name:</strong> ${allProductNames}</p>` : ""}
+            <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Date & Time:</strong> ${dateTimeDisplay}</p>
+            <p style="font-size: 0.95rem; margin-bottom: 20px;"><strong>Compliance Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusDisplay}</span></p>
+            <p style="font-size: 0.95rem; line-height: 1.6; color: #555;">${output || ""}</p>
+        </div>
+    `;
+    
+    resultsSection.appendChild(headerDiv);
+    console.log('Header section appended');
 }
 
 // DISPLAY COA RESULTS
@@ -315,20 +386,33 @@ function displayCOA(coaData) {
     let validItemCount = 0;
     coaData.forEach((item, idx) => {
         console.log('Processing COA item', idx, item);
-        if (!item || Object.keys(item).length === 0) return; // Skip empty objects
+        // Skip empty objects or objects without required fields
+        if (!item || Object.keys(item).length === 0 || (!item.hasOwnProperty('compliant') && !item.hasOwnProperty('reason'))) {
+            return;
+        }
         validItemCount++;
         
         const card = document.createElement("div");
         card.className = "results-card";
         
-        const compliantStatus = item.compliant ? "✓ COMPLIANT" : "✗ NON-COMPLIANT";
-        const statusColor = item.compliant ? "green" : "red";
+        // Determine compliance status
+        let complianceStatus = "Unknown";
+        let statusColor = "gray";
+        
+        if (item.compliant === true) {
+            complianceStatus = "✓ COMPLIANT";
+            statusColor = "green";
+        } else if (item.compliant === false) {
+            complianceStatus = "✗ NON-COMPLIANT";
+            statusColor = "red";
+        }
         
         card.innerHTML = `
-            <p style="color:${statusColor};font-weight:bold;">${compliantStatus}</p>
+            <p style="color:black;"><strong>Ref:</strong> ${item.ref || "N/A"}</p>
+            <p style="color:${statusColor};font-weight:bold;">${complianceStatus}</p>
             <p style="color:black;"><strong>Reason:</strong> ${item.reason || "None provided"}</p>
             <p style="color:black;"><strong>Evidence:</strong> ${item.evidence || "None provided"}</p>
-            ${item.ref ? `<p style="color:black;"><strong>Reference:</strong> ${item.ref}</p>` : ""}
+            ${item.suggested_fix ? `<p style="color:black;"><strong>Suggested Fix:</strong> ${item.suggested_fix}</p>` : ""}
         `;
         coaDiv.appendChild(card);
     });
@@ -354,20 +438,37 @@ function displayLabels(labelsData) {
     let validItemCount = 0;
     labelsData.forEach((item, idx) => {
         console.log('Processing labels item', idx, item);
-        if (!item || Object.keys(item).length === 0) return; // Skip empty objects
+        // Skip empty objects or objects without required fields
+        if (!item || Object.keys(item).length === 0 || (!item.hasOwnProperty('compliant') && !item.hasOwnProperty('reason'))) {
+            return;
+        }
         validItemCount++;
         
         const card = document.createElement("div");
         card.className = "results-card";
         
-        const compliantStatus = item.compliant ? "✓ COMPLIANT" : "✗ NON-COMPLIANT";
-        const statusColor = item.compliant ? "green" : "red";
+        // Determine compliance status - handle both boolean and string values
+        let complianceStatus = "Unknown";
+        let statusColor = "gray";
+        
+        const compliantValue = item.compliant;
+        if (compliantValue === true || compliantValue === "true") {
+            complianceStatus = "✓ COMPLIANT";
+            statusColor = "green";
+        } else if (compliantValue === false || compliantValue === "false") {
+            complianceStatus = "✗ NON-COMPLIANT";
+            statusColor = "red";
+        } else if (compliantValue === "human_review") {
+            complianceStatus = "⚠ HUMAN REVIEW";
+            statusColor = "orange";
+        }
         
         card.innerHTML = `
-            <p style="color:${statusColor};font-weight:bold;">${compliantStatus}</p>
+            <p style="color:black;"><strong>Ref:</strong> ${item.ref || "N/A"}</p>
+            <p style="color:${statusColor};font-weight:bold;">${complianceStatus}</p>
             <p style="color:black;"><strong>Reason:</strong> ${item.reason || "None provided"}</p>
             <p style="color:black;"><strong>Evidence:</strong> ${item.evidence || "None provided"}</p>
-            ${item.ref ? `<p style="color:black;"><strong>Reference:</strong> ${item.ref}</p>` : ""}
+            ${item.suggested_fix ? `<p style="color:black;"><strong>Suggested Fix:</strong> ${item.suggested_fix}</p>` : ""}
         `;
         labelsDiv.appendChild(card);
     });
