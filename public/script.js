@@ -427,7 +427,7 @@ function displayCOA(coaData) {
         }
         
         card.innerHTML = `
-            <p style="color:black;"><strong>Ref:</strong> ${item.ref || "N/A"}</p>
+            <p style="color:black;"><strong>Ref:</strong> ${getRefWithHyperlink(item.ref)}</p>
             <p style="color:${statusColor};font-weight:bold;">${complianceStatus}</p>
             <p style="color:black;"><strong>Rule Summary:</strong> ${item.rule_summary || "None provided"}</p>
             <p style="color:black;"><strong>Evidence:</strong> ${item.evidence || "None provided"}</p>
@@ -483,9 +483,9 @@ function displayLabels(labelsData) {
         }
         
         card.innerHTML = `
-            <p style="color:black;"><strong>Ref:</strong> ${item.ref || "N/A"}</p>
+            <p style="color:black;"><strong>Ref:</strong> ${getRefWithHyperlink(item.ref)}</p>
             <p style="color:${statusColor};font-weight:bold;">${complianceStatus}</p>
-            <p style="color:black;"><strong>Rule Summary:</strong> ${item.rule_summary || "None provided"}</p>
+            <p style="color:black;"><strong>Reason:</strong> ${item.reason || "None provided"}</p>
             <p style="color:black;"><strong>Evidence:</strong> ${item.evidence || "None provided"}</p>
             ${item.suggested_fix ? `<p style="color:black;"><strong>Suggested Fix:</strong> ${item.suggested_fix}</p>` : ""}
         `;
@@ -494,6 +494,25 @@ function displayLabels(labelsData) {
     
     resultsSection.appendChild(labelsDiv);
     console.log('Labels section appended with', validItemCount, 'valid items');
+}
+
+function getRefWithHyperlink(ref) {
+    if (!ref || ref === "N/A") {
+        return "N/A";
+    }
+    
+    let url = null;
+    if (ref.includes("581.217")) {
+        url = "https://www.leg.state.fl.us/Statutes/index.cfm?App_mode=Display_Statute&URL=0500-0599/0581/Sections/0581.217.html";
+    } else if (ref.includes("5K-4.034")) {
+        url = "https://www.law.cornell.edu/regulations/florida/Fla-Admin-Code-Ann-R-5K-4-034";
+    }
+    
+    if (url) {
+        return `<a href="${url}" target="_blank" style="color: #007bff; text-decoration: underline;">${ref}</a>`;
+    }
+    
+    return ref;
 }
 
 function showError(msg) {
