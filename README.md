@@ -163,6 +163,7 @@ The application handles various error scenarios:
 Errors are displayed in a user-friendly format with clear messages.
 
 ## Development
+test
 
 To run in development mode with auto-restart:
 
