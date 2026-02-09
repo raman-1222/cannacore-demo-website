@@ -220,9 +220,16 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
         'Content-Type': 'application/json',
       },
       timeout: 60000,
+      validateStatus: () => true // Don't throw on any status code
     });
 
-    console.log('Lamatic API Response received');
+    console.log('Lamatic API Response Status:', response.status);
+    console.log('Lamatic API Response Headers:', response.headers);
+    console.log('Lamatic API Response Body:', response.data);
+
+    if (response.status !== 200) {
+      throw new Error(`Lamatic API returned ${response.status}: ${JSON.stringify(response.data)}`);
+    }
 
     if (response.data.errors) {
       throw new Error(`Lamatic API Error: ${response.data.errors[0]?.message}`);
