@@ -259,11 +259,36 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       throw new Error('No requestId returned from Lamatic - cannot poll for results');
     }
 
-    console.log('Starting polling for results with requestId:', requestId);
+    console.log('Workflow submitted with requestId:', requestId);
+    
+    // Return immediately with requestId - client will poll for results
+    res.json({
+      success: true,
+      status: 'pending',
+      requestId: requestId,
+      message: 'Compliance check submitted. Please wait for results.'
+    });
 
-    // Poll for results indefinitely until success or failure
-    let pollCount = 0;
-    let finalResult = null;
+  } catch (error) {
+    console.error('Error processing compliance check:', error);
+    
+    res.status(500).json({
+      error: error.response?.data?.errors?.[0]?.message || error.message || 'An error occurred while processing your request'
+    });
+  }
+});
+
+// API endpoint to check workflow results
+app.get('/api/results/:requestId', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const lamaticApiKey = process.env.LAMATIC_API_KEY;
+    const projectId = process.env.LAMATIC_PROJECT_ID;
+    const lamaticApiUrl = process.env.LAMATIC_API_URL;
+
+    if (!lamaticApiKey || !projectId || !lamaticApiUrl || !requestId) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
 
     const getResultQuery = `
       query getWorkflowResult($requestId: String!) {
@@ -274,72 +299,67 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       }
     `;
 
-    while (!finalResult) {
-      pollCount++;
-      const delay = Math.min(1000 * pollCount, 5000); // Exponential backoff: 1s, 2s, 3s, 4s, 5s...
-      
-      console.log(`Poll ${pollCount}: Waiting ${delay}ms before checking results...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+    console.log(`Checking results for requestId: ${requestId}`);
 
-      const pollResponse = await axios.post(lamaticApiUrl, {
-        query: getResultQuery,
-        variables: { requestId: requestId }
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${lamaticApiKey}`,
-          'x-project-id': projectId
-        },
-        timeout: 60000,
-        validateStatus: () => true
-      });
+    const pollResponse = await axios.post(lamaticApiUrl, {
+      query: getResultQuery,
+      variables: { requestId: requestId }
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${lamaticApiKey}`,
+        'x-project-id': projectId
+      },
+      timeout: 60000,
+      validateStatus: () => true
+    });
 
-      console.log(`Poll ${pollCount} Response Status:`, pollResponse.status);
-      
-      const pollResult = pollResponse.data.data?.getWorkflowResult;
-      console.log(`Poll ${pollCount} Result:`, JSON.stringify(pollResult, null, 2));
+    console.log(`Results check Status:`, pollResponse.status);
+    
+    const pollResult = pollResponse.data.data?.getWorkflowResult;
+    console.log(`Results check Result:`, JSON.stringify(pollResult, null, 2));
 
-      if (pollResponse.status === 200 && pollResult) {
-        if (pollResult.status === 'success' && pollResult.result) {
-          console.log('Results ready! Stopping polls.');
-          finalResult = pollResult.result;
-          break;
-        } else if (pollResult.status === 'failed' || pollResult.status === 'error') {
-          throw new Error(`Lamatic workflow failed: ${pollResult.status}`);
+    if (pollResponse.status === 200 && pollResult) {
+      if (pollResult.status === 'success' && pollResult.result) {
+        console.log('Results ready!');
+        
+        let parsedOutput = pollResult.result;
+        if (typeof pollResult.result === 'string') {
+          try {
+            parsedOutput = JSON.parse(pollResult.result);
+          } catch (e) {
+            console.error('Failed to parse Lamatic output:', pollResult.result);
+          }
         }
-        // If still processing, continue polling
-        console.log(`Poll ${pollCount}: Status is ${pollResult.status}, continuing...`);
+
+        return res.json({
+          success: true,
+          status: 'success',
+          ...parsedOutput
+        });
+      } else if (pollResult.status === 'failed' || pollResult.status === 'error') {
+        return res.status(500).json({
+          error: `Lamatic workflow failed: ${pollResult.status}`,
+          status: 'failed'
+        });
       }
+      // Still processing
+      return res.json({
+        success: false,
+        status: 'processing',
+        message: 'Workflow still processing...'
+      });
     }
 
-    if (!finalResult) {
-      throw new Error(`Lamatic workflow did not complete after ${pollCount} polls`);
-    }
-
-    console.log('Final parsed result:', JSON.stringify(finalResult, null, 2));
-
-    let parsedOutput = finalResult;
-    if (typeof finalResult === 'string') {
-      try {
-        parsedOutput = JSON.parse(finalResult);
-      } catch (e) {
-        console.error('Failed to parse Lamatic output:', finalResult);
-        throw new Error('Could not parse Lamatic API response');
-      }
-    }
-
-    console.log('Parsed Lamatic output');
-
-    res.json({
-      success: true,
-      ...parsedOutput
+    res.status(pollResponse.status).json({
+      error: 'Failed to check workflow results',
+      details: pollResponse.data
     });
 
   } catch (error) {
-    console.error('Error processing compliance check:', error);
-    
+    console.error('Error checking results:', error);
     res.status(500).json({
-      error: error.response?.data?.errors?.[0]?.message || error.message || 'An error occurred while processing your request'
+      error: error.message || 'An error occurred while checking results'
     });
   }
 });

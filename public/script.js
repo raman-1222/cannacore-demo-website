@@ -263,6 +263,7 @@ uploadForm.addEventListener('submit', async e => {
 
     uploadForm.style.display = "none";
     loadingState.style.display = "block";
+    loadingState.innerHTML = '<div class="loading-spinner"></div><p>Submitting compliance check...</p>';
 
     try {
         const response = await fetch("/api/check-compliance", {
@@ -287,27 +288,61 @@ uploadForm.addEventListener('submit', async e => {
         }
 
         const json = await response.json();
+        console.log('API Response:', json);
 
-        console.log('Full API Response:', json);
-
-        // --------- Extract data from API response -----------
-        const result = json?.result || {};
-
-        console.log('Result object:', result);
-
-        // Store the entire result in sessionStorage for the results page
-        sessionStorage.setItem("complianceResults", JSON.stringify(result));
-
-        // --------- Redirect to results page -----------
-        loadingState.style.display = "none";
-        uploadForm.style.display = "block";
-        
-        // Redirect to results page
-        window.location.href = "/results.html";
+        // Check if we got a requestId (async response)
+        if (json.requestId && json.status === 'pending') {
+            console.log('Got requestId, starting polling:', json.requestId);
+            await pollForResults(json.requestId);
+        } else {
+            // Synchronous response with results
+            const result = json?.result || json;
+            sessionStorage.setItem("complianceResults", JSON.stringify(result));
+            window.location.href = "/results.html";
+        }
     } catch (err) {
         loadingState.style.display = "none";
         uploadForm.style.display = "block";
         showError(err.message);
+    }
+});
+
+// Function to poll for results
+async function pollForResults(requestId) {
+    let pollCount = 0;
+    const pollInterval = 2 * 60 * 1000; // 2 minutes = 120,000ms
+
+    while (true) {
+        pollCount++;
+
+        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Processing compliance check...<br/>Checking status (attempt ${pollCount} - next check in 2 min)...</p>`;
+
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+        try {
+            const response = await fetch(`/api/results/${requestId}`);
+            const resultData = await response.json();
+
+            console.log(`Poll ${pollCount}:`, resultData);
+
+            if (response.ok && resultData.success && resultData.status === 'success') {
+                // Results ready!
+                console.log('Results received!');
+                sessionStorage.setItem("complianceResults", JSON.stringify(resultData));
+                loadingState.style.display = "none";
+                window.location.href = "/results.html";
+                return;
+            } else if (resultData.status === 'failed' || resultData.error) {
+                throw new Error(resultData.error || 'Workflow failed');
+            }
+            // Still processing, continue polling
+            console.log(`Status: ${resultData.status}, continuing...`);
+        } catch (err) {
+            console.error(`Poll ${pollCount} error:`, err);
+            // Don't throw on individual poll errors, keep trying
+        }
+    }
+}
     }
 });
 
