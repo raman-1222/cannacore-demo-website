@@ -21,8 +21,6 @@
         }
     ],
     "env": {
-        "SUPABASE_URL": "@supabase_url",
-        "SUPABASE_ANON_KEY": "@supabase_anon_key",
         "LAMATIC_API_KEY": "@lamatic_api_key",
         "LAMATIC_WORKFLOW_ID": "@lamatic_workflow_id"
     }

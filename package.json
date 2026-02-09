@@ -22,7 +22,7 @@
     "dotenv": "^16.3.1",
     "cors": "^2.8.5",
     "express-rate-limit": "^7.1.5",
-    "@supabase/supabase-js": "^2.39.0"
+    "@vercel/blob": "^0.23.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

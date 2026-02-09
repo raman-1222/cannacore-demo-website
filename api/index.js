@@ -5,32 +5,15 @@ const axios = require('axios');
 const path = require('path');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const { createClient } = require('@supabase/supabase-js');
+const { put } = require('@vercel/blob');
 const crypto = require('crypto');
 
 const app = express();
 
-// Helper function to verify URL is accessible
-async function verifyUrlAccessible(url) {
-  try {
-    const response = await axios.head(url, { timeout: 5000 });
-    console.log(`URL verified: ${url} - Status ${response.status}`);
-    return response.status === 200;
-  } catch (error) {
-    console.error(`URL verification failed for ${url}:`, error.message);
-    return false;
-  }
-}
-
-// Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 // Rate limiting configuration
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -40,19 +23,17 @@ const apiLimiter = rateLimit({
 app.use(cors());
 app.use(express.json());
 
-// Configure multer for file uploads - use memory storage for Supabase
+// Configure multer for file uploads
 const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
   fileFilter: function (req, file, cb) {
     if (file.fieldname === 'images') {
-      // Accept images only
       if (!file.mimetype.startsWith('image/')) {
         return cb(new Error('Only image files are allowed for images!'), false);
       }
     } else if (file.fieldname === 'pdf' || file.fieldname === 'labelsPdf') {
-      // Accept PDF only for both COA and labels
       if (file.mimetype !== 'application/pdf') {
         return cb(new Error('Only PDF files are allowed!'), false);
       }
@@ -68,17 +49,9 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
   { name: 'labelsPdf', maxCount: 1 }
 ]), async (req, res) => {
   try {
-    // Validate uploads - at least images or labels PDF is required
     if (!req.files || (!req.files.images && !req.files.labelsPdf)) {
       return res.status(400).json({
         error: 'Please upload either product images or labels PDF'
-      });
-    }
-
-    // Check if Supabase is configured
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({
-        error: 'Supabase configuration is missing. Please check environment variables.'
       });
     }
 
@@ -87,40 +60,30 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const labelsPdf = req.files.labelsPdf ? req.files.labelsPdf[0] : null;
     const jurisdictions = req.body.jurisdictions || [];
 
-    console.log('=== SUPABASE UPLOAD ===');
-    console.log('Uploading images to Supabase...');
+    console.log('=== VERCEL BLOB UPLOAD ===');
+    console.log('Uploading files to Vercel Blob Storage...');
 
-    // Upload images to Supabase Storage
+    // Upload images to Vercel Blob
     const imageUrls = [];
-    const uploadedImagePaths = [];
-    const allUploadedPaths = [];
     
     if (images) {
       for (let i = 0; i < images.length; i++) {
         const image = images[i];
         const uniqueImageId = crypto.randomBytes(8).toString('hex');
         const imageExtension = path.extname(image.originalname) || '.jpg';
-        const imageFilename = `image-${uniqueImageId}${imageExtension}`;
-        const imagePath = `images/${imageFilename}`;
+        const imageFilename = `images/${uniqueImageId}${imageExtension}`;
         
-        const { data: imageData, error: imageError } = await supabase.storage
-          .from('cannacore')
-          .upload(imagePath, image.buffer, {
-            contentType: image.mimetype
+        try {
+          const blob = await put(imageFilename, image.buffer, {
+            access: 'public',
+            contentType: image.mimetype,
           });
-        
-        if (imageError) {
-          throw new Error(`Failed to upload image: ${imageError.message}`);
+          imageUrls.push(blob.url);
+          console.log(`Image uploaded: ${imageFilename}`);
+        } catch (error) {
+          console.error(`Failed to upload image: ${error.message}`);
+          throw new Error(`Failed to upload image: ${error.message}`);
         }
-        
-        // Get public URL for image
-        const { data: imageUrlData } = supabase.storage
-          .from('cannacore')
-          .getPublicUrl(imagePath);
-        
-        imageUrls.push(imageUrlData.publicUrl);
-        allUploadedPaths.push(imagePath);
-        uploadedImagePaths.push(imagePath);
       }
     }
 
@@ -129,29 +92,22 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     // Upload COA PDF if provided
     let pdfUrls = [];
     if (pdf) {
-      console.log('Uploading COA PDF to Supabase...');
+      console.log('Uploading COA PDF to Vercel Blob...');
       const uniquePdfId = crypto.randomBytes(8).toString('hex');
       const pdfExtension = path.extname(pdf.originalname) || '.pdf';
-      const pdfFilename = `coa-pdf-${uniquePdfId}${pdfExtension}`;
-      const pdfPath = `pdfs/${pdfFilename}`;
+      const pdfFilename = `pdfs/${uniquePdfId}${pdfExtension}`;
       
-      const { data: pdfData, error: pdfError } = await supabase.storage
-        .from('cannacore')
-        .upload(pdfPath, pdf.buffer, {
-          contentType: pdf.mimetype
+      try {
+        const blob = await put(pdfFilename, pdf.buffer, {
+          access: 'public',
+          contentType: pdf.mimetype,
         });
-      
-      if (pdfError) {
-        throw new Error(`Failed to upload COA PDF: ${pdfError.message}`);
+        pdfUrls.push(blob.url);
+        console.log(`COA PDF uploaded: ${pdfFilename}`);
+      } catch (error) {
+        console.error(`Failed to upload COA PDF: ${error.message}`);
+        throw new Error(`Failed to upload COA PDF: ${error.message}`);
       }
-      
-      // Get public URL for PDF
-      const { data: pdfUrlData } = supabase.storage
-        .from('cannacore')
-        .getPublicUrl(pdfPath);
-      
-      pdfUrls.push(pdfUrlData.publicUrl);
-      allUploadedPaths.push(pdfPath);
     } else {
       console.log('No COA PDF uploaded');
     }
@@ -159,29 +115,22 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     // Upload labels PDF if provided
     let labelsPdfUrl = null;
     if (labelsPdf) {
-      console.log('Uploading labels PDF to Supabase...');
+      console.log('Uploading labels PDF to Vercel Blob...');
       const uniqueLabelsPdfId = crypto.randomBytes(8).toString('hex');
       const labelsPdfExtension = path.extname(labelsPdf.originalname) || '.pdf';
-      const labelsPdfFilename = `labels-pdf-${uniqueLabelsPdfId}${labelsPdfExtension}`;
-      const labelsPdfPath = `labels-pdfs/${labelsPdfFilename}`;
+      const labelsPdfFilename = `labels-pdfs/${uniqueLabelsPdfId}${labelsPdfExtension}`;
       
-      const { data: labelsPdfData, error: labelsPdfError } = await supabase.storage
-        .from('cannacore')
-        .upload(labelsPdfPath, labelsPdf.buffer, {
-          contentType: labelsPdf.mimetype
+      try {
+        const blob = await put(labelsPdfFilename, labelsPdf.buffer, {
+          access: 'public',
+          contentType: labelsPdf.mimetype,
         });
-      
-      if (labelsPdfError) {
-        throw new Error(`Failed to upload labels PDF: ${labelsPdfError.message}`);
+        labelsPdfUrl = blob.url;
+        console.log(`Labels PDF uploaded: ${labelsPdfFilename}`);
+      } catch (error) {
+        console.error(`Failed to upload labels PDF: ${error.message}`);
+        throw new Error(`Failed to upload labels PDF: ${error.message}`);
       }
-      
-      // Get public URL for labels PDF
-      const { data: labelsPdfUrlData } = supabase.storage
-        .from('cannacore')
-        .getPublicUrl(labelsPdfPath);
-      
-      labelsPdfUrl = labelsPdfUrlData.publicUrl;
-      allUploadedPaths.push(labelsPdfPath);
     } else {
       console.log('No labels PDF uploaded');
     }
@@ -190,7 +139,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     console.log('PDF URLs:', pdfUrls);
     console.log('Labels PDF URL:', labelsPdfUrl);
 
-    // Add labels PDF to imageUrls array if provided
     const allImageUrls = [...imageUrls];
     if (labelsPdfUrl) {
       allImageUrls.push(labelsPdfUrl);
@@ -198,7 +146,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     console.log('=== LAMATIC API CALL ===');
 
-    // Prepare GraphQL query for Lamatic
     const lamaticApiKey = process.env.LAMATIC_API_KEY;
     const workflowId = process.env.LAMATIC_WORKFLOW_ID;
 
@@ -206,7 +153,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       throw new Error('Lamatic API key or workflow ID is missing. Check environment variables.');
     }
 
-    // Construct the GraphQL query
     const graphqlQuery = `
       query runComplianceCheck(
         $lamaticApiKey: String!, 
@@ -245,7 +191,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const companyName = req.body.company_name || 'N/A';
     const productType = req.body.product_type || 'N/A';
 
-    // Make the request to Lamatic
     const response = await axios.post('https://api.lamatic.ai/graphql', {
       query: graphqlQuery,
       variables: {
@@ -291,7 +236,6 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     console.log('Parsed Lamatic output');
 
-    // Return the compliance results
     res.json({
       success: true,
       ...parsedOutput
@@ -311,5 +255,4 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Export for Vercel
 module.exports = app;
