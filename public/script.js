@@ -325,18 +325,23 @@ async function pollForResults(requestId) {
 
             console.log(`Poll ${pollCount}:`, resultData);
 
-            if (response.ok && resultData.success && resultData.status === 'success') {
-                // Results ready!
+            // Extract the actual compliance data from nested structure
+            const checkStatusData = resultData.data?.checkStatus;
+            
+            if (response.ok && checkStatusData?.success && checkStatusData?.status === 'success') {
+                // Results ready! Extract the actual result object
                 console.log('Results received!');
-                sessionStorage.setItem("complianceResults", JSON.stringify(resultData));
+                const actualResult = checkStatusData.data?.output?.result || checkStatusData.data;
+                console.log('Storing result:', actualResult);
+                sessionStorage.setItem("complianceResults", JSON.stringify(actualResult));
                 loadingState.style.display = "none";
                 window.location.href = "/results.html";
                 return;
-            } else if (resultData.status === 'failed' || resultData.error) {
+            } else if (checkStatusData?.status === 'failed' || resultData.error) {
                 throw new Error(resultData.error || 'Workflow failed');
             }
             // Still processing, continue polling
-            console.log(`Status: ${resultData.status}, continuing...`);
+            console.log(`Status: ${checkStatusData?.status}, continuing...`);
         } catch (err) {
             console.error(`Poll ${pollCount} error:`, err);
             // Don't throw on individual poll errors, keep trying
