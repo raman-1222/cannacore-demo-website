@@ -235,7 +235,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     console.log('Lamatic API Response Status:', response.status);
     console.log('Lamatic API Response Headers:', response.headers);
-    console.log('Lamatic API Response Body:', response.data);
+    console.log('Lamatic API Response Body:', JSON.stringify(response.data, null, 2));
 
     if (response.status !== 200) {
       throw new Error(`Lamatic API returned ${response.status}: ${JSON.stringify(response.data)}`);
@@ -246,6 +246,8 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     }
 
     const result = response.data.data?.executeWorkflow?.result;
+
+    console.log('Full executeWorkflow result:', JSON.stringify(result, null, 2));
 
     if (!result) {
       throw new Error('No output from Lamatic API');
