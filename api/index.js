@@ -157,40 +157,40 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     
     const lamaticApiKey = process.env.LAMATIC_API_KEY;
     const workflowId = process.env.LAMATIC_WORKFLOW_ID;
+    const projectId = process.env.LAMATIC_PROJECT_ID;
     const lamaticApiUrl = process.env.LAMATIC_API_URL;
 
-    if (!lamaticApiKey || !workflowId || !lamaticApiUrl) {
-      throw new Error('Lamatic API key, workflow ID, or API URL is missing. Check environment variables.');
+    if (!lamaticApiKey || !workflowId || !projectId || !lamaticApiUrl) {
+      throw new Error('Lamatic API key, workflow ID, project ID, or API URL is missing. Check environment variables.');
     }
 
     const graphqlQuery = `
-      query runComplianceCheck(
-        $lamaticApiKey: String!, 
-        $workflowId: String!, 
-        $imageUrls: [String!]!,
-        $jurisdictions: [String!]!,
-        $coaurl: [String!]!,
-        $labelurl: [String!]!,
-        $date: String!,
-        $time: String!,
-        $company_name: String!,
-        $product_type: String!
+      query executeWorkflow(
+        $workflowId: String!
+        $imageurl: [String]
+        $coaurl: [String]
+        $labelurl: [String]
+        $jurisdictions: [String]
+        $date: String
+        $time: String
+        $company_name: String
+        $product_type: String
       ) {
-        lamaticApi(
-          apiKey: $lamaticApiKey
+        executeWorkflow(
           workflowId: $workflowId
-          input: {
-            imageUrls: $imageUrls
-            jurisdictions: $jurisdictions
+          payload: {
+            imageurl: $imageurl
             coaurl: $coaurl
             labelurl: $labelurl
+            jurisdictions: $jurisdictions
             date: $date
             time: $time
             company_name: $company_name
             product_type: $product_type
           }
         ) {
-          output
+          status
+          result
         }
       }
     `;
@@ -203,14 +203,14 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     console.log('API URL:', lamaticApiUrl);
     console.log('Workflow ID:', workflowId);
+    console.log('Project ID:', projectId);
     console.log('API Key (first 10 chars):', lamaticApiKey?.substring(0, 10) + '...');
     
     const requestPayload = {
       query: graphqlQuery,
       variables: {
-        lamaticApiKey: lamaticApiKey,
         workflowId: workflowId,
-        imageUrls: imageUrls,
+        imageurl: imageUrls,
         jurisdictions: jurisdictions,
         coaurl: pdfUrls.length > 0 ? pdfUrls : ["https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884"],
         labelurl: allImageUrls,
@@ -226,6 +226,8 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const response = await axios.post(lamaticApiUrl, requestPayload, {
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${lamaticApiKey}`,
+        'x-project-id': projectId
       },
       timeout: 60000,
       validateStatus: () => true // Don't throw on any status code
@@ -243,7 +245,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       throw new Error(`Lamatic API Error: ${response.data.errors[0]?.message}`);
     }
 
-    const result = response.data.data?.lamaticApi?.output;
+    const result = response.data.data?.executeWorkflow?.result;
 
     if (!result) {
       throw new Error('No output from Lamatic API');
