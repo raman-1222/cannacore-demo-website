@@ -163,6 +163,44 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       throw new Error('Lamatic API key, workflow ID, or API URL is missing. Check environment variables.');
     }
 
+    const graphqlQuery = `
+      query runComplianceCheck(
+        $lamaticApiKey: String!, 
+        $workflowId: String!, 
+        $imageUrls: [String!]!,
+        $jurisdictions: [String!]!,
+        $coaurl: [String!]!,
+        $labelurl: [String!]!,
+        $date: String!,
+        $time: String!,
+        $company_name: String!,
+        $product_type: String!
+      ) {
+        lamaticApi(
+          apiKey: $lamaticApiKey
+          workflowId: $workflowId
+          input: {
+            imageUrls: $imageUrls
+            jurisdictions: $jurisdictions
+            coaurl: $coaurl
+            labelurl: $labelurl
+            date: $date
+            time: $time
+            company_name: $company_name
+            product_type: $product_type
+          }
+        ) {
+          output
+        }
+      }
+    `;
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US');
+    const timeStr = now.toLocaleTimeString('en-US');
+    const companyName = req.body.company_name || 'N/A';
+    const productType = req.body.product_type || 'N/A';
+
     console.log('API URL:', lamaticApiUrl);
     console.log('Workflow ID:', workflowId);
     console.log('API Key (first 10 chars):', lamaticApiKey?.substring(0, 10) + '...');
