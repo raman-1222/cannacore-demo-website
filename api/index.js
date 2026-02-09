@@ -291,11 +291,8 @@ app.get('/api/results/:requestId', async (req, res) => {
     }
 
     const getResultQuery = `
-      query getWorkflowResult($requestId: String!) {
-        getWorkflowResult(requestId: $requestId) {
-          status
-          result
-        }
+      query checkStatus($request_id: String!) {
+        checkStatus(requestId: $request_id)
       }
     `;
 
@@ -303,7 +300,7 @@ app.get('/api/results/:requestId', async (req, res) => {
 
     const pollResponse = await axios.post(lamaticApiUrl, {
       query: getResultQuery,
-      variables: { requestId: requestId }
+      variables: { request_id: requestId }
     }, {
       headers: {
         'Content-Type': 'application/json',
@@ -316,39 +313,16 @@ app.get('/api/results/:requestId', async (req, res) => {
 
     console.log(`Results check Status:`, pollResponse.status);
     
-    const pollResult = pollResponse.data.data?.getWorkflowResult;
+    const pollResult = pollResponse.data.data?.checkStatus;
     console.log(`Full pollResponse.data:`, JSON.stringify(pollResponse.data, null, 2));
     console.log(`Results check Result:`, JSON.stringify(pollResult, null, 2));
 
     if (pollResponse.status === 200 && pollResult) {
-      if (pollResult.status === 'success' && pollResult.result) {
-        console.log('Results ready!');
-        
-        let parsedOutput = pollResult.result;
-        if (typeof pollResult.result === 'string') {
-          try {
-            parsedOutput = JSON.parse(pollResult.result);
-          } catch (e) {
-            console.error('Failed to parse Lamatic output:', pollResult.result);
-          }
-        }
-
-        return res.json({
-          success: true,
-          status: 'success',
-          ...parsedOutput
-        });
-      } else if (pollResult.status === 'failed' || pollResult.status === 'error') {
-        return res.status(500).json({
-          error: `Lamatic workflow failed: ${pollResult.status}`,
-          status: 'failed'
-        });
-      }
-      // Still processing
+      // Lamatic returns the result directly from checkStatus
       return res.json({
-        success: false,
-        status: 'processing',
-        message: 'Workflow still processing...'
+        success: true,
+        status: 'success',
+        ...pollResult
       });
     }
 
