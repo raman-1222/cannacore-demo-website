@@ -321,10 +321,12 @@ app.get('/api/results/:requestId', async (req, res) => {
       // Lamatic returns the result directly from checkStatus
       // Check if this is a success response
       if (pollResult.success && pollResult.status === 'success') {
+        // Extract the actual result from nested structure
+        const actualResult = pollResult.data?.output?.result || pollResult.data;
         return res.json({
           success: true,
           status: 'success',
-          data: pollResult.data
+          data: actualResult
         });
       }
       // Still in progress or other status

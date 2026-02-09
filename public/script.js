@@ -326,11 +326,10 @@ async function pollForResults(requestId) {
             console.log(`Poll ${pollCount}:`, resultData);
 
             if (response.ok && resultData.success && resultData.status === 'success') {
-                // Results ready! Extract the actual result object
+                // Results ready! Data is now properly extracted
                 console.log('Results received!');
-                const actualResult = resultData.data?.output?.result || resultData.data;
-                console.log('Storing result:', actualResult);
-                sessionStorage.setItem("complianceResults", JSON.stringify(actualResult));
+                console.log('Storing result:', resultData.data);
+                sessionStorage.setItem("complianceResults", JSON.stringify(resultData.data));
                 loadingState.style.display = "none";
                 window.location.href = "/results.html";
                 return;

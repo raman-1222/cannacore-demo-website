@@ -227,9 +227,15 @@
             // Calculate overall compliance status
             const overallStatus = calculateOverallComplianceStatus(complianceItem);
 
+            // Build output section if available
+            const outputSection = allCompliances.output 
+                ? `<p style="font-size: 0.95rem; margin-bottom: 20px; line-height: 1.6; color: #555;"><strong>Summary:</strong> ${allCompliances.output}</p>`
+                : '';
+
             headerDiv.innerHTML = `
                 <h1 style="text-align: center; font-size: 1.8rem; margin-bottom: 30px; font-weight: bold;">Label & Packaging Review</h1>
                 <div style="text-align: left;">
+                    ${outputSection}
                     <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Jurisdiction:</strong> ${complianceItem.jurisdiction || "N/A"}</p>
                     <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Company Name:</strong> ${allCompliances.company_name || "N/A"}</p>
                     <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Product Type:</strong> ${allCompliances.product_type || "N/A"}</p>
