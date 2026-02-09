@@ -10,6 +10,9 @@ const crypto = require('crypto');
 
 const app = express();
 
+// Trust proxy for Vercel
+app.set('trust proxy', 1);
+
 // Rate limiting configuration
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -58,7 +61,12 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const images = req.files.images;
     const pdf = req.files.pdf ? req.files.pdf[0] : null;
     const labelsPdf = req.files.labelsPdf ? req.files.labelsPdf[0] : null;
-    const jurisdictions = req.body.jurisdictions || [];
+    
+    // Ensure jurisdictions is always an array
+    let jurisdictions = req.body.jurisdictions || [];
+    if (typeof jurisdictions === 'string') {
+      jurisdictions = [jurisdictions];
+    }
 
     console.log('=== VERCEL BLOB UPLOAD ===');
     console.log('Uploading files to Vercel Blob Storage...');
