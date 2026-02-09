@@ -14,20 +14,25 @@ body {
 
 .results-card {
     background: white;
-    padding: 15px;
+    padding: 20px;
     border-radius: 10px;
-    margin-bottom: 12px;
+    margin-bottom: 15px;
     border: 1px solid #ddd;
     word-wrap: break-word;
     overflow-wrap: break-word;
     white-space: normal;
+    min-height: auto;
+    overflow: visible;
 }
 
 .results-card p {
-    margin-bottom: 10px;
-    line-height: 1.6;
+    margin-bottom: 12px;
+    line-height: 1.7;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    white-space: pre-wrap;
+    color: black;
+    font-size: 0.95rem;
 }
 
 .results-category {
@@ -237,6 +242,84 @@ main {
 .submit-btn:disabled {
     background: #cccccc;
     cursor: not-allowed;
+}
+
+.jurisdiction-dropdown-container {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.jurisdiction-dropdown-btn {
+    width: 100%;
+    padding: 12px 15px;
+    border: 2px solid #d0d0d0;
+    border-radius: 8px;
+    background: white;
+    font-size: 1rem;
+    font-family: 'Roboto', sans-serif;
+    color: #1a1a1a;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+}
+
+.jurisdiction-dropdown-btn:hover {
+    border-color: #333333;
+}
+
+.jurisdiction-dropdown-btn:focus {
+    outline: none;
+    border-color: #000000;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+}
+
+.jurisdiction-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 2px solid #d0d0d0;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.jurisdiction-option {
+    padding: 12px 15px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.jurisdiction-option:hover {
+    background-color: #f5f5f5;
+}
+
+.jurisdiction-option:last-child {
+    border-bottom: none;
+}
+
+.jurisdiction-checkbox {
+    cursor: pointer;
+    margin-right: 12px;
+    width: 18px;
+    height: 18px;
+    accent-color: #000000;
+}
+
+.jurisdiction-option label {
+    cursor: pointer;
+    flex-grow: 1;
+    margin: 0;
+    font-size: 1rem;
 }
 
 .loading-state {
@@ -490,6 +573,43 @@ main {
     background: #333333;
 }
 
+/* Jurisdiction Selector Styles */
+#jurisdictionSelectorContainer {
+    background: #f9f9f9;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+#jurisdictionSelectorContainer label {
+    display: inline-block;
+    margin-right: 15px;
+    color: #333;
+    font-size: 1rem;
+}
+
+#jurisdictionSelect {
+    padding: 10px 15px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+    cursor: pointer;
+    background-color: white;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    min-width: 200px;
+}
+
+#jurisdictionSelect:hover {
+    border-color: #333;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#jurisdictionSelect:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
 @media (max-width: 768px) {
     .results-page {
         padding: 20px 15px;
@@ -505,5 +625,19 @@ main {
 
     .results-divider {
         margin: 25px 0;
+    }
+
+    #jurisdictionSelectorContainer {
+        display: flex;
+        flex-direction: column;
+    }
+
+    #jurisdictionSelectorContainer label {
+        margin-right: 0;
+        margin-bottom: 10px;
+    }
+
+    #jurisdictionSelect {
+        width: 100%;
     }
 }

@@ -47,9 +47,6 @@ const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
-  limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB limit
-  },
   fileFilter: function (req, file, cb) {
     if (file.fieldname === 'images') {
       // Accept images only
@@ -69,7 +66,7 @@ const upload = multer({
 // API endpoint to handle file uploads and compliance check
 app.post('/api/check-compliance', apiLimiter, upload.fields([
   { name: 'images', maxCount: 10 },
-  { name: 'pdf', maxCount: 1 },
+  { name: 'pdf', maxCount: 10 },
   { name: 'labelsPdf', maxCount: 1 }
 ]), async (req, res) => {
   try {
@@ -90,6 +87,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const images = req.files.images;
     const pdf = req.files.pdf ? req.files.pdf[0] : null;
     const labelsPdf = req.files.labelsPdf ? req.files.labelsPdf[0] : null;
+    const jurisdictions = req.body.jurisdictions || [];
 
     console.log('=== SUPABASE UPLOAD ===');
     console.log('Uploading images to Supabase...');
@@ -113,15 +111,15 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
         
         if (imageError) {
           // Cleanup previously uploaded images
-          if (uploadedImagePaths.length > 0) {
-            try {
-              await supabase.storage
-                .from('cannacore')
-                .remove(uploadedImagePaths);
-            } catch (cleanupError) {
-              console.error('Failed to cleanup images after error:', cleanupError);
-            }
-          }
+          // if (uploadedImagePaths.length > 0) {
+          //   try {
+          //     await supabase.storage
+          //       .from('cannacore')
+          //       .remove(uploadedImagePaths);
+          //   } catch (cleanupError) {
+          //     console.error('Failed to cleanup images after error:', cleanupError);
+          //   }
+          // }
           throw new Error(`Failed to upload image: ${imageError.message}`);
         }
         
@@ -137,47 +135,52 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       console.log('No images uploaded');
     }
 
-    // Upload PDF to Supabase Storage (optional)
-    let pdfUrl = 'https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884';
+    // Upload PDFs to Supabase Storage (optional)
+    let pdfUrls = [];
     const allUploadedPaths = [...uploadedImagePaths];
     
     if (pdf) {
-      const uniquePdfId = crypto.randomUUID();
-      const pdfExtension = path.extname(pdf.originalname) || '.pdf';
-      const pdfFilename = `pdf-${uniquePdfId}${pdfExtension}`;
-      const pdfPath = `pdfs/${pdfFilename}`;
+      // Handle both single file and array of files
+      const pdfFiles = Array.isArray(pdf) ? pdf : [pdf];
       
-      const { data: pdfData, error: pdfError } = await supabase.storage
-        .from('cannacore')
-        .upload(pdfPath, pdf.buffer, {
-          contentType: pdf.mimetype
-        });
-      
-      if (pdfError) {
-        // Cleanup already uploaded images
-        try {
-          await supabase.storage
-            .from('cannacore')
-            .remove(uploadedImagePaths);
-        } catch (cleanupError) {
-          console.error('Failed to cleanup images after PDF upload error:', cleanupError);
+      for (const pdfFile of pdfFiles) {
+        const uniquePdfId = crypto.randomUUID();
+        const pdfExtension = path.extname(pdfFile.originalname) || '.pdf';
+        const pdfFilename = `pdf-${uniquePdfId}${pdfExtension}`;
+        const pdfPath = `pdfs/${pdfFilename}`;
+        
+        const { data: pdfData, error: pdfError } = await supabase.storage
+          .from('cannacore')
+          .upload(pdfPath, pdfFile.buffer, {
+            contentType: pdfFile.mimetype
+          });
+        
+        if (pdfError) {
+          // Cleanup already uploaded files
+          // try {
+          //   await supabase.storage
+          //     .from('cannacore')
+          //     .remove(allUploadedPaths);
+          // } catch (cleanupError) {
+          //   console.error('Failed to cleanup files after PDF upload error:', cleanupError);
+          // }
+          throw new Error(`Failed to upload PDF: ${pdfError.message}`);
         }
-        throw new Error(`Failed to upload PDF: ${pdfError.message}`);
+        
+        // Get public URL for PDF
+        const { data: pdfUrlData } = supabase.storage
+          .from('cannacore')
+          .getPublicUrl(pdfPath);
+        
+        pdfUrls.push(pdfUrlData.publicUrl);
+        allUploadedPaths.push(pdfPath);
       }
-      
-      // Get public URL for PDF
-      const { data: pdfUrlData } = supabase.storage
-        .from('cannacore')
-        .getPublicUrl(pdfPath);
-      
-      pdfUrl = pdfUrlData.publicUrl;
-      allUploadedPaths.push(pdfPath);
     } else {
-      console.log('No PDF uploaded - using default COA URL');
+      console.log('No PDFs uploaded');
     }
 
     console.log('Image URLs:', imageUrls);
-    console.log('PDF URL:', pdfUrl);
+    console.log('PDF URLs:', pdfUrls);
 
     // Upload Labels PDF to Supabase Storage (optional)
     let labelsPdfUrl = '';
@@ -196,13 +199,13 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       
       if (labelsPdfError) {
         // Cleanup already uploaded files
-        try {
-          await supabase.storage
-            .from('cannacore')
-            .remove(allUploadedPaths);
-        } catch (cleanupError) {
-          console.error('Failed to cleanup files after labels PDF upload error:', cleanupError);
-        }
+        // try {
+        //   await supabase.storage
+        //     .from('cannacore')
+        //     .remove(allUploadedPaths);
+        // } catch (cleanupError) {
+        //   console.error('Failed to cleanup files after labels PDF upload error:', cleanupError);
+        // }
         throw new Error(`Failed to upload labels PDF: ${labelsPdfError.message}`);
       }
       
@@ -218,7 +221,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     }
 
     console.log('Image URLs:', imageUrls);
-    console.log('PDF URL:', pdfUrl);
+    console.log('PDF URLs:', pdfUrls);
     console.log('Labels PDF URL:', labelsPdfUrl);
 
     // Add labels PDF to imageUrls array if provided
@@ -230,19 +233,19 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     // Verify all URLs are accessible before calling API
     console.log('Verifying URL accessibility...');
-    const allUrlsToVerify = [...allImageUrls, pdfUrl];
+    const allUrlsToVerify = [...allImageUrls, ...pdfUrls];
     for (const url of allUrlsToVerify) {
-      if (url && url !== 'https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884') {
+      if (url) {
         const isAccessible = await verifyUrlAccessible(url);
         if (!isAccessible) {
           // Cleanup files before returning error
-          try {
-            await supabase.storage
-              .from('cannacore')
-              .remove(allUploadedPaths);
-          } catch (cleanupError) {
-            console.error('Failed to cleanup files:', cleanupError);
-          }
+          // try {
+          //   await supabase.storage
+          //     .from('cannacore')
+          //     .remove(allUploadedPaths);
+          // } catch (cleanupError) {
+          //   console.error('Failed to cleanup files:', cleanupError);
+          // }
           return res.status(400).json({
             error: `Uploaded file is not accessible at ${url}. Please try uploading again.`
           });
@@ -259,13 +262,13 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     if (!lamatic_api_key) {
       // Cleanup uploaded files before returning
-      try {
-        await supabase.storage
-          .from('cannacore')
-          .remove(allUploadedPaths);
-      } catch (cleanupError) {
-        console.error('Failed to cleanup files after config error:', cleanupError);
-      }
+      // try {
+      //   await supabase.storage
+      //     .from('cannacore')
+      //     .remove(allUploadedPaths);
+      // } catch (cleanupError) {
+      //   console.error('Failed to cleanup files after config error:', cleanupError);
+      // }
       return res.status(500).json({
         error: 'LAMATIC_API_KEY is not configured'
       });
@@ -273,13 +276,13 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     if (!lamatic_api_url || !lamatic_workflow_id || !lamatic_project_id) {
       // Cleanup uploaded files before returning
-      try {
-        await supabase.storage
-          .from('cannacore')
-          .remove(allUploadedPaths);
-      } catch (cleanupError) {
-        console.error('Failed to cleanup files after config error:', cleanupError);
-      }
+      // try {
+      //   await supabase.storage
+      //     .from('cannacore')
+      //     .remove(allUploadedPaths);
+      // } catch (cleanupError) {
+      //   console.error('Failed to cleanup files after config error:', cleanupError);
+      // }
       return res.status(500).json({
         error: 'Lamatic API configuration is incomplete. Please check environment variables.'
       });
@@ -289,13 +292,15 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       query ExecuteWorkflow(
         $workflowId: String!
         $imageurl: [String]
-        $coaurl: String        
+        $coaurl: [String]
+        $jurisdictions: [String]
       ) {
         executeWorkflow(
           workflowId: $workflowId
           payload: {
             imageurl: $imageurl
             coaurl: $coaurl
+            jurisdictions: $jurisdictions
           }
         ) {
           status
@@ -306,7 +311,8 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     const variables = {
       "workflowId": lamatic_workflow_id,
       "imageurl": allImageUrls,
-      "coaurl": pdfUrl
+      "coaurl": pdfUrls.length > 0 ? pdfUrls : ["https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884"],
+      "jurisdictions": Array.isArray(jurisdictions) ? jurisdictions : [jurisdictions].filter(Boolean)
     };
 
     const options = {
@@ -343,17 +349,17 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     } finally {
       // Cleanup files from Supabase after API call
       // Only attempt cleanup if files were uploaded
-      if (allUploadedPaths && allUploadedPaths.length > 0) {
-        console.log('Cleaning up files from Supabase...');
-        try {
-          await supabase.storage
-            .from('cannacore')
-            .remove(allUploadedPaths);
-          console.log('Files successfully cleaned up from Supabase');
-        } catch (cleanupError) {
-          console.error('Failed to cleanup files from Supabase:', cleanupError);
-        }
-      }
+      // if (allUploadedPaths && allUploadedPaths.length > 0) {
+      //   console.log('Cleaning up files from Supabase...');
+      //   try {
+      //     await supabase.storage
+      //       .from('cannacore')
+      //       .remove(allUploadedPaths);
+      //     console.log('Files successfully cleaned up from Supabase');
+      //   } catch (cleanupError) {
+      //     console.error('Failed to cleanup files from Supabase:', cleanupError);
+      //   }
+      // }
     }
     
     // If API call failed, throw the error now (after cleanup)

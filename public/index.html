@@ -64,10 +64,72 @@
                                 <polyline points="14 2 14 8 20 8" />
                             </svg>
                             <p>Click to upload</p>
-                            <span class="upload-hint">PDF only (Max 10MB)</span>
+                            <span class="upload-hint">PDF only (Max 10MB each)</span>
                         </div>
                     </div>
                     <div id="pdfPreview" class="preview-container"></div>
+                </section>
+
+                <!-- Jurisdiction Selection Section -->
+                <section class="upload-section">
+                    <h2>Select Jurisdiction(s)</h2>
+                    <div class="jurisdiction-dropdown-container">
+                        <button type="button" id="jurisdictionDropdownBtn" class="jurisdiction-dropdown-btn">
+                            <span id="jurisdictionPlaceholder">Select jurisdictions...</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div id="jurisdictionDropdownMenu" class="jurisdiction-dropdown-menu" style="display: none;">
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Florida" value="Florida" class="jurisdiction-checkbox">
+                                <label for="check-Florida">Florida</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-NewYork" value="New York"
+                                    class="jurisdiction-checkbox">
+                                <label for="check-NewYork">New York</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Minnesota" value="Minnesota"
+                                    class="jurisdiction-checkbox">
+                                <label for="check-Minnesota">Minnesota</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Texas" value="Texas" class="jurisdiction-checkbox">
+                                <label for="check-Texas">Texas</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Georgia" value="Georgia" class="jurisdiction-checkbox">
+                                <label for="check-Georgia">Georgia</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Alabama" value="Alabama" class="jurisdiction-checkbox">
+                                <label for="check-Alabama">Alabama</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Kentucky" value="Kentucky"
+                                    class="jurisdiction-checkbox">
+                                <label for="check-Kentucky">Kentucky</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Louisiana" value="Louisiana"
+                                    class="jurisdiction-checkbox">
+                                <label for="check-Louisiana">Louisiana</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-Tennessee" value="Tennessee"
+                                    class="jurisdiction-checkbox">
+                                <label for="check-Tennessee">Tennessee</label>
+                            </div>
+                            <div class="jurisdiction-option">
+                                <input type="checkbox" id="check-WestVirginia" value="West Virginia"
+                                    class="jurisdiction-checkbox">
+                                <label for="check-WestVirginia">West Virginia</label>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Submit Button -->

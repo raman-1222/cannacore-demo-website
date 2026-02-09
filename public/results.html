@@ -18,11 +18,17 @@
 
             <div class="results-divider"></div>
 
-            <!-- Non-Compliant Items Section -->
-            <section class="results-non-compliant-section">
-                <h2 class="results-section-header" id="nonCompliantHeader">NON-COMPLIANT ITEMS</h2>
-                <div id="nonCompliantItemsContainer"></div>
-            </section>
+            <!-- Jurisdiction Dropdown -->
+            <div id="jurisdictionSelectorContainer" style="display: none; margin-bottom: 30px;">
+                <label for="jurisdictionSelect" style="font-weight: 600; margin-right: 10px;">Select
+                    Jurisdiction:</label>
+                <select id="jurisdictionSelect"
+                    style="padding: 8px 12px; border-radius: 5px; border: 1px solid #ddd; font-size: 1rem; cursor: pointer;">
+                </select>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection"></div>
 
             <!-- Back Button -->
             <button id="backButton" class="results-back-button">BACK TO UPLOAD</button>
@@ -30,6 +36,9 @@
     </div>
 
     <script>
+        let allCompliances = null;
+        let selectedJurisdiction = null;
+
         window.addEventListener("DOMContentLoaded", () => {
             const stored = sessionStorage.getItem("complianceResults");
 
@@ -49,77 +58,253 @@
             }
 
             console.log("Loaded results:", parsed);
+            allCompliances = parsed;
 
-            const issues = parsed.issues || [];
+            // Extract jurisdictions from compliance_check
+            const jurisdictions = (parsed.compliance_check || []).map(item => item.jurisdiction);
 
-            renderIssues(issues);
+            if (jurisdictions.length > 0) {
+                populateJurisdictionDropdown(jurisdictions);
+                selectedJurisdiction = jurisdictions[0];
+                document.getElementById("jurisdictionSelectorContainer").style.display = "block";
+                renderComplianceResults(selectedJurisdiction);
+            } else {
+                document.getElementById("resultsSection").innerHTML = "<p>No compliance data found.</p>";
+            }
         });
 
+        function populateJurisdictionDropdown(jurisdictions) {
+            const select = document.getElementById("jurisdictionSelect");
+            select.innerHTML = "";
+            // Deduplicate jurisdictions using Set
+            const uniqueJurisdictions = [...new Set(jurisdictions)];
+            uniqueJurisdictions.forEach(jurisdiction => {
+                const option = document.createElement("option");
+                option.value = jurisdiction;
+                option.textContent = jurisdiction;
+                select.appendChild(option);
+            });
 
-        function renderIssues(issues) {
-            const container = document.getElementById("nonCompliantItemsContainer");
-            const header = document.getElementById("nonCompliantHeader");
-
-            header.textContent = `NON-COMPLIANT ITEMS (${issues.length})`;
-
-            if (issues.length === 0) {
-                container.innerHTML = `<p>No non-compliant issues found</p>`;
-                return;
-            }
-
-            issues.forEach(issue => {
-                const card = document.createElement("div");
-                card.className = "results-non-compliant-card";
-
-                // Issue
-                const issueTxt = document.createElement("p");
-                issueTxt.textContent = issue.issue_identified;
-                issueTxt.style.color = "red";
-                issueTxt.style.fontWeight = "bold";
-                issueTxt.style.marginBottom = "8px";
-                card.appendChild(issueTxt);
-
-                // Evidence
-                if (issue.evidence) {
-                    const label = document.createElement("p");
-                    label.textContent = "Evidence:";
-                    label.style.fontWeight = "600";
-                    card.appendChild(label);
-
-                    const txt = document.createElement("p");
-                    txt.textContent = issue.evidence;
-                    txt.style.marginBottom = "8px";
-                    card.appendChild(txt);
-                }
-
-                // Suggested fix
-                if (issue.suggested_fix) {
-                    const label = document.createElement("p");
-                    label.textContent = "Suggested Fix:";
-                    label.style.fontWeight = "600";
-                    card.appendChild(label);
-
-                    const txt = document.createElement("p");
-                    txt.textContent = issue.suggested_fix;
-                    card.appendChild(txt);
-                }
-
-                // Ref
-                if (issue.ref) {
-                    const label = document.createElement("p");
-                    label.textContent = "Reference:";
-                    label.style.fontWeight = "600";
-                    card.appendChild(label);
-
-                    const txt = document.createElement("p");
-                    txt.textContent = issue.ref;
-                    card.appendChild(txt);
-                }
-
-                container.appendChild(card);
+            select.addEventListener("change", (e) => {
+                selectedJurisdiction = e.target.value;
+                renderComplianceResults(selectedJurisdiction);
             });
         }
 
+        function renderComplianceResults(jurisdiction) {
+            const resultsSection = document.getElementById("resultsSection");
+            resultsSection.innerHTML = "";
+
+            // Find the compliance data for the selected jurisdiction
+            const complianceItem = (allCompliances.compliance_check || []).find(
+                item => item.jurisdiction === jurisdiction
+            );
+
+            if (!complianceItem) {
+                resultsSection.innerHTML = "<p>No data found for selected jurisdiction.</p>";
+                return;
+            }
+
+            // Display header
+            displayHeader(allCompliances, complianceItem);
+
+            // Display merged product key
+            if (complianceItem.merged_product_key) {
+                const keyDiv = document.createElement("div");
+                keyDiv.style.marginBottom = "20px";
+                const capitalizedProduct = complianceItem.merged_product_key.toUpperCase();
+                keyDiv.innerHTML = `<p style="font-size: 1.3rem; font-weight: bold; color: #333;"><strong>PRODUCT:</strong> ${capitalizedProduct}</p>`;
+                resultsSection.appendChild(keyDiv);
+            }
+
+            // Display Label Review
+            if (complianceItem.label && complianceItem.label.length > 0) {
+                displayLabelReview(complianceItem.label);
+            }
+
+            // Display COA Review
+            if (complianceItem.coa && complianceItem.coa.length > 0) {
+                displayCOAReview(complianceItem.coa);
+            }
+        }
+
+        function getComplianceStatus(compliantValue) {
+            // Normalize compliance status to handle different formats
+            let complianceStatus = "Unknown";
+            let statusColor = "gray";
+
+            // Handle boolean and string values
+            const normalizedValue = String(compliantValue).toLowerCase().trim();
+
+            if (normalizedValue === "true") {
+                complianceStatus = "✓ COMPLIANT";
+                statusColor = "green";
+            } else if (normalizedValue === "false") {
+                complianceStatus = "✗ NON-COMPLIANT";
+                statusColor = "red";
+            } else if (normalizedValue === "human_review" || normalizedValue === "human review") {
+                complianceStatus = "⚠ HUMAN REVIEW";
+                statusColor = "orange";
+            }
+
+            return { complianceStatus, statusColor };
+        }
+
+        function getRefWithHyperlink(refValue, urlValue) {
+            // If object has a url field, use it
+            if (urlValue) {
+                return `<a href="${urlValue}" target="_blank" style="color: #007bff; text-decoration: underline;">${refValue}</a>`;
+            }
+
+            // Fallback: Map known reference patterns to URLs
+            let url = null;
+            if (String(refValue).includes("581.217")) {
+                url = "https://www.leg.state.fl.us/Statutes/index.cfm?App_mode=Display_Statute&URL=0500-0599/0581/Sections/0581.217.html";
+            } else if (String(refValue).includes("5K-4.034")) {
+                url = "https://www.law.cornell.edu/regulations/florida/Fla-Admin-Code-Ann-R-5K-4-034";
+            } else if (String(refValue).includes("9 NYCRR")) {
+                url = "https://www.dec.ny.gov/regulations";
+            } else if (String(refValue).includes("101.")) {
+                url = "https://www.ecfr.gov/current/title-21/part-101";
+            }
+
+            if (url) {
+                return `<a href="${url}" target="_blank" style="color: #007bff; text-decoration: underline;">${refValue}</a>`;
+            }
+
+            return refValue;
+        }
+
+        function calculateOverallComplianceStatus(complianceItem) {
+            let hasNonCompliant = false;
+            let hasHumanReview = false;
+
+            // Check label items
+            if (complianceItem.label && Array.isArray(complianceItem.label)) {
+                complianceItem.label.forEach(item => {
+                    const normalized = String(item.compliant).toLowerCase().trim();
+                    if (normalized === "false") {
+                        hasNonCompliant = true;
+                    } else if (normalized === "human_review" || normalized === "human review") {
+                        hasHumanReview = true;
+                    }
+                });
+            }
+
+            // Check COA items
+            if (complianceItem.coa && Array.isArray(complianceItem.coa)) {
+                complianceItem.coa.forEach(item => {
+                    const normalized = String(item.compliant).toLowerCase().trim();
+                    if (normalized === "false") {
+                        hasNonCompliant = true;
+                    } else if (normalized === "human_review" || normalized === "human review") {
+                        hasHumanReview = true;
+                    }
+                });
+            }
+
+            if (hasNonCompliant) {
+                return { status: "NON-COMPLIANT", color: "red" };
+            } else if (hasHumanReview) {
+                return { status: "HUMAN REVIEW", color: "orange" };
+            } else {
+                return { status: "COMPLIANT", color: "green" };
+            }
+        }
+
+        function displayHeader(allCompliances, complianceItem) {
+            const resultsSection = document.getElementById("resultsSection");
+            const headerDiv = document.createElement("div");
+            headerDiv.className = "results-category header-section";
+            headerDiv.style.borderBottom = "1px solid #ddd";
+            headerDiv.style.paddingBottom = "30px";
+            headerDiv.style.marginBottom = "40px";
+
+            const dateTimeDisplay = allCompliances.date && allCompliances.time
+                ? `${allCompliances.date} ${allCompliances.time}`
+                : allCompliances.date || allCompliances.time || "N/A";
+
+            // Calculate overall compliance status
+            const overallStatus = calculateOverallComplianceStatus(complianceItem);
+
+            headerDiv.innerHTML = `
+                <h1 style="text-align: center; font-size: 1.8rem; margin-bottom: 30px; font-weight: bold;">Label & Packaging Review</h1>
+                <div style="text-align: left;">
+                    <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Jurisdiction:</strong> ${complianceItem.jurisdiction || "N/A"}</p>
+                    <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Company Name:</strong> ${allCompliances.company_name || "N/A"}</p>
+                    <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Product Type:</strong> ${allCompliances.product_type || "N/A"}</p>
+                    <p style="font-size: 0.95rem; margin-bottom: 10px;"><strong>Date & Time:</strong> ${dateTimeDisplay}</p>
+                    <p style="font-size: 0.95rem; margin-bottom: 20px;"><strong>Compliance Status:</strong> <span style="color: ${overallStatus.color}; font-weight: bold;">${overallStatus.status}</span></p>
+                </div>
+            `;
+
+            resultsSection.appendChild(headerDiv);
+        }
+
+        function displayLabelReview(labelData) {
+            const resultsSection = document.getElementById("resultsSection");
+            const labelDiv = document.createElement("div");
+            labelDiv.className = "results-category";
+            labelDiv.innerHTML = `<h2>LABEL REVIEW</h2>`;
+
+            labelData.forEach((item, index) => {
+                const card = document.createElement("div");
+                card.className = "results-card";
+
+                // Determine compliance status using helper function
+                const { complianceStatus, statusColor } = getComplianceStatus(item.compliant);
+
+                // Get hyperlinked reference
+                const refLink = getRefWithHyperlink(item.ref || "N/A", item.url);
+
+                card.innerHTML = `
+                    <p style="color:black;"><strong>${index + 1} Ref:</strong> ${refLink}</p>
+                    <p style="color:${statusColor};font-weight:bold;">${complianceStatus}</p>
+                    <p style="color:black;"><strong>Product Name:</strong> ${item.product_name || "N/A"}</p>
+                    <p style="color:black;"><strong>Rule Summary:</strong> ${item.rule_summary || "None provided"}</p>
+                    <p style="color:black;"><strong>Evidence:</strong> ${item.evidence || "None provided"}</p>
+                    ${item.suggested_fix ? `<p style="color:black;"><strong>Suggested Fix:</strong> ${item.suggested_fix}</p>` : ""}
+                `;
+                labelDiv.appendChild(card);
+            });
+
+            resultsSection.appendChild(labelDiv);
+        }
+
+        function displayCOAReview(coaData) {
+            const resultsSection = document.getElementById("resultsSection");
+            const coaDiv = document.createElement("div");
+            coaDiv.className = "results-category";
+            coaDiv.innerHTML = `<h2>COA REVIEW</h2>`;
+
+            if (coaData.length === 0) {
+                coaDiv.innerHTML += "<p>No COA data available</p>";
+                resultsSection.appendChild(coaDiv);
+                return;
+            }
+
+            coaData.forEach((item, index) => {
+                const card = document.createElement("div");
+                card.className = "results-card";
+
+                // Determine compliance status using helper function
+                const { complianceStatus, statusColor } = getComplianceStatus(item.compliant);
+
+                // Get hyperlinked reference
+                const refLink = getRefWithHyperlink(item.ref || "N/A", item.url);
+
+                card.innerHTML = `
+                    <p style="color:black;"><strong>${index + 1} Ref:</strong> ${refLink}</p>
+                    <p style="color:${statusColor};font-weight:bold;">${complianceStatus}</p>
+                    <p style="color:black;"><strong>Rule Summary:</strong> ${item.rule_summary || "None provided"}</p>
+                    <p style="color:black;"><strong>Evidence:</strong> ${item.evidence || "None provided"}</p>
+                    ${item.suggested_fix ? `<p style="color:black;"><strong>Suggested Fix:</strong> ${item.suggested_fix}</p>` : ""}
+                `;
+                coaDiv.appendChild(card);
+            });
+
+            resultsSection.appendChild(coaDiv);
+        }
 
         document.getElementById("backButton").addEventListener("click", () => {
             sessionStorage.removeItem("complianceResults");

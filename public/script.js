@@ -1,12 +1,17 @@
 // State management
 let selectedImages = [];
-let selectedPdf = null;
+let selectedPdfs = null;
 let selectedLabelsPdf = null;
+let selectedJurisdictions = [];
 
 // Get DOM elements
 const imageInput = document.getElementById('imageInput');
 const pdfInput = document.getElementById('pdfInput');
 const labelsPdfInput = document.getElementById('labelsPdfInput');
+const jurisdictionDropdownBtn = document.getElementById('jurisdictionDropdownBtn');
+const jurisdictionDropdownMenu = document.getElementById('jurisdictionDropdownMenu');
+const jurisdictionPlaceholder = document.getElementById('jurisdictionPlaceholder');
+const jurisdictionCheckboxes = document.querySelectorAll('.jurisdiction-checkbox');
 const imageUploadArea = document.getElementById('imageUploadArea');
 const pdfUploadArea = document.getElementById('pdfUploadArea');
 const labelsPdfUploadArea = document.getElementById('labelsPdfUploadArea');
@@ -42,7 +47,7 @@ imageUploadArea.addEventListener('drop', e => {
 // PDF file input
 pdfUploadArea.addEventListener('click', () => pdfInput.click());
 pdfInput.addEventListener('change', e => {
-    if (e.target.files.length > 0) handlePdfFile(e.target.files[0]);
+    if (e.target.files.length > 0) handlePdfFiles(e.target.files[0]);
 });
 
 pdfUploadArea.addEventListener('dragover', e => {
@@ -56,7 +61,7 @@ pdfUploadArea.addEventListener('drop', e => {
     e.preventDefault();
     pdfUploadArea.classList.remove('drag-over');
     const files = [...e.dataTransfer.files].filter(f => f.type === 'application/pdf');
-    if (files.length > 0) handlePdfFile(files[0]);
+    if (files.length > 0) handlePdfFiles(files[0]);
 });
 
 // LABELS PDF file input
@@ -77,6 +82,39 @@ labelsPdfUploadArea.addEventListener('drop', e => {
     labelsPdfUploadArea.classList.remove('drag-over');
     const files = [...e.dataTransfer.files].filter(f => f.type === 'application/pdf');
     if (files.length > 0) handleLabelsPdfFile(files[0]);
+});
+
+// JURISDICTION SELECTION
+jurisdictionDropdownBtn.addEventListener('click', e => {
+    e.preventDefault();
+    jurisdictionDropdownMenu.style.display = jurisdictionDropdownMenu.style.display === 'none' ? 'block' : 'none';
+});
+
+jurisdictionCheckboxes.forEach(checkbox => {
+    checkbox.addEventListener('change', () => {
+        selectedJurisdictions = Array.from(jurisdictionCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+        updateJurisdictionDisplay();
+        updateSubmitButton();
+    });
+});
+
+function updateJurisdictionDisplay() {
+    if (selectedJurisdictions.length === 0) {
+        jurisdictionPlaceholder.textContent = 'Select jurisdictions...';
+    } else if (selectedJurisdictions.length === 1) {
+        jurisdictionPlaceholder.textContent = selectedJurisdictions[0];
+    } else {
+        jurisdictionPlaceholder.textContent = `${selectedJurisdictions.length} selected`;
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+    if (!e.target.closest('.jurisdiction-dropdown-container')) {
+        jurisdictionDropdownMenu.style.display = 'none';
+    }
 });
 
 // HANDLE IMAGES
@@ -132,29 +170,32 @@ function removeImage(index) {
 }
 
 // HANDLE PDF
-function handlePdfFile(file) {
-    selectedPdf = file;
+function handlePdfFiles(file) {
+    if (file && file.type === 'application/pdf') {
+        selectedPdfs = file;
+    }
+    pdfInput.value = "";
     updatePdfPreview();
     updateSubmitButton();
 }
 
 function updatePdfPreview() {
-    if (!selectedPdf) {
+    if (!selectedPdfs) {
         pdfPreview.innerHTML = "";
         return;
     }
 
     pdfPreview.innerHTML = `
         <div class="pdf-preview">
-            <strong>${selectedPdf.name}</strong>
-            <span>${formatFileSize(selectedPdf.size)}</span>
+            <strong>${selectedPdfs.name}</strong>
+            <span>${formatFileSize(selectedPdfs.size)}</span>
             <button onclick="removePdf(event)">Remove</button>
         </div>`;
 }
 
 function removePdf(e) {
     e.preventDefault();
-    selectedPdf = null;
+    selectedPdfs = null;
     pdfInput.value = "";
     updatePdfPreview();
     updateSubmitButton();
@@ -196,7 +237,7 @@ function formatFileSize(bytes) {
 }
 
 function updateSubmitButton() {
-    submitBtn.disabled = !(selectedImages.length > 0 || selectedLabelsPdf); // At least one of images or labels PDF required
+    submitBtn.disabled = !(selectedImages.length > 0 || selectedLabelsPdf) || selectedJurisdictions.length === 0;
 }
 
 // HANDLE SUBMIT
@@ -207,14 +248,18 @@ uploadForm.addEventListener('submit', async e => {
 
     const formData = new FormData();
     selectedImages.forEach(img => formData.append("images", img));
-    // PDF is optional - only add if selected
-    if (selectedPdf) {
-        formData.append("pdf", selectedPdf);
+    // COA PDF is optional - only add if selected
+    if (selectedPdfs) {
+        formData.append("pdf", selectedPdfs);
     }
     // Labels PDF is optional - only add if selected
     if (selectedLabelsPdf) {
         formData.append("labelsPdf", selectedLabelsPdf);
     }
+    // Add selected jurisdictions
+    selectedJurisdictions.forEach(jurisdiction => {
+        formData.append("jurisdictions", jurisdiction);
+    });
 
     uploadForm.style.display = "none";
     loadingState.style.display = "block";
@@ -232,9 +277,10 @@ uploadForm.addEventListener('submit', async e => {
         if (!response.ok) {
             let errorData;
             try {
-                errorData = await response.json();
+                const text = await response.text();
+                errorData = JSON.parse(text);
             } catch (e) {
-                errorData = await response.text();
+                errorData = { error: `Server error: ${response.status} ${response.statusText}` };
             }
             console.error('Error response:', errorData);
             throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
@@ -246,97 +292,18 @@ uploadForm.addEventListener('submit', async e => {
 
         // --------- Extract data from API response -----------
         const result = json?.result || {};
-        
+
         console.log('Result object:', result);
-        
-        const headerOutput = result.output || "";
-        const companyName = result.company_name || "";
-        const productType = result.product_type || "";
-        const date = result.date || "";
-        const time = result.time || "";
-        const coaData = result.coa?.output || [];
-        const labelsData = result.labels?.output || [];
 
-        console.log('Extracted Header Output:', headerOutput);
-        console.log('Extracted COA Data:', coaData);
-        console.log('Extracted Labels Data:', labelsData);
+        // Store the entire result in sessionStorage for the results page
+        sessionStorage.setItem("complianceResults", JSON.stringify(result));
 
-        // --------- Collect all product names from labels only (deduplicate and remove substrings) -----------
-        const productNamesMap = new Map(); // Use Map to deduplicate case-insensitively
-        labelsData.forEach(item => {
-            if (item && item.product_name && Array.isArray(item.product_name)) {
-                item.product_name.forEach(name => {
-                    const lowerName = name.toLowerCase();
-                    if (!productNamesMap.has(lowerName)) {
-                        productNamesMap.set(lowerName, name);
-                    }
-                });
-            }
-        });
-        
-        // Remove product names that are substrings of other product names
-        const finalProductNames = Array.from(productNamesMap.values()).filter((name, index, arr) => {
-            return !arr.some((otherName, otherIndex) => {
-                return index !== otherIndex && otherName.toLowerCase().includes(name.toLowerCase());
-            });
-        });
-        
-        const allProductNames = finalProductNames.join(", ") || "";
-
-        // --------- Calculate overall compliance status and count concerns -----------
-        let hasNonCompliant = false;
-        let hasHumanReview = false;
-        let nonCompliantCount = 0;
-        let humanReviewCount = 0;
-        
-        // Check COA data
-        coaData.forEach(item => {
-            if (item && item.hasOwnProperty('compliant')) {
-                if (item.compliant === false) {
-                    hasNonCompliant = true;
-                    nonCompliantCount++;
-                }
-            }
-        });
-        
-        // Check Labels data
-        labelsData.forEach(item => {
-            if (item && item.hasOwnProperty('compliant')) {
-                if (item.compliant === false || item.compliant === "false") {
-                    hasNonCompliant = true;
-                    nonCompliantCount++;
-                } else if (item.compliant === "human_review") {
-                    hasHumanReview = true;
-                    humanReviewCount++;
-                }
-            }
-        });
-        
-        let overallStatus = "COMPLIANT";
-        let totalConcerns = 0;
-        if (hasNonCompliant) {
-            overallStatus = "NON-COMPLIANT";
-            totalConcerns = nonCompliantCount + humanReviewCount;
-        } else if (hasHumanReview) {
-            overallStatus = "HUMAN REVIEW";
-            totalConcerns = humanReviewCount;
-        }
-
-        // --------- Display results -----------
+        // --------- Redirect to results page -----------
         loadingState.style.display = "none";
-        resultsSection.style.display = "block";
-        resultsSection.innerHTML = ""; // Clear previous results
+        uploadForm.style.display = "block";
         
-        // Display Header
-        displayHeader(companyName, productType, date, time, headerOutput, overallStatus, allProductNames, totalConcerns);
-        
-        // Display Labels Results
-        console.log('Calling displayLabels with', labelsData.length, 'items');
-        displayLabels(labelsData);
-        
-        // Display COA Results
-        console.log('Calling displayCOA with', coaData.length, 'items');
-        displayCOA(coaData);
+        // Redirect to results page
+        window.location.href = "/results.html";
     } catch (err) {
         loadingState.style.display = "none";
         uploadForm.style.display = "block";
