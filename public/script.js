@@ -293,6 +293,8 @@ uploadForm.addEventListener('submit', async e => {
         // Check if we got a requestId (async response)
         if (json.requestId && json.status === 'pending') {
             console.log('Got requestId, starting polling:', json.requestId);
+            // Show checking compliance spinner immediately
+            loadingState.innerHTML = '<div class="loading-spinner"></div><p>Checking compliance...</p>';
             await pollForResults(json.requestId);
         } else {
             // Synchronous response with results
@@ -315,7 +317,7 @@ async function pollForResults(requestId) {
     while (true) {
         pollCount++;
 
-        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Processing compliance check...<br/>Checking status (attempt ${pollCount} - next check in 1 min)...</p>`;
+        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Checking compliance...<br/>(attempt ${pollCount})</p>`;
 
         await new Promise(resolve => setTimeout(resolve, pollInterval));
 
