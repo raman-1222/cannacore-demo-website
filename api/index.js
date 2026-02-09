@@ -1,6 +1,4 @@
-git add api/index.js
-git commit -m "Fix variable initialization order - graphqlQuery defined first"
-git pushrequire('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const axios = require('axios');
