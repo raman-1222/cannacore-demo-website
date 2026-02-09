@@ -19,8 +19,5 @@
     "env": {
         "LAMATIC_API_KEY": "@lamatic_api_key",
         "LAMATIC_WORKFLOW_ID": "@lamatic_workflow_id"
-    },
-    "engines": {
-        "node": "20.x"
     }
 }
