@@ -9,7 +9,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
 </head>
 
 <body>
@@ -352,49 +351,25 @@
             downloadButton.textContent = "GENERATING WORD DOC...";
 
             try {
-                const htmlContent = resultsSection.innerText || resultsSection.textContent;
-                const contentLines = htmlContent.split('\n').filter(line => line.trim());
+                const content = resultsSection.innerText || resultsSection.textContent;
 
-                // Wait for docx library with timeout
-                let attempts = 0;
-                const maxAttempts = 50; // 5 seconds max wait
-                while (!window.docx && attempts < maxAttempts) {
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    attempts++;
-                }
-
-                if (!window.docx) {
-                    throw new Error('Document library failed to load');
-                }
-
-                const { Document, Packer, Paragraph, convertInchesToTwip } = window.docx;
-
-                const paragraphs = contentLines.map(line => {
-                    return new Paragraph({
-                        text: line.trim(),
-                        spacing: { after: 100 }
-                    });
+                const response = await fetch('/api/download-report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ content })
                 });
 
-                const doc = new Document({
-                    sections: [{
-                        properties: {
-                            margin: {
-                                top: convertInchesToTwip(1),
-                                bottom: convertInchesToTwip(1),
-                                left: convertInchesToTwip(1),
-                                right: convertInchesToTwip(1)
-                            }
-                        },
-                        children: paragraphs
-                    }]
-                });
+                if (!response.ok) {
+                    throw new Error('Failed to generate document');
+                }
 
-                const timestamp = new Date().toISOString().split('T')[0];
-                const blob = await Packer.toBlob(doc);
+                const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
+                const timestamp = new Date().toISOString().split('T')[0];
                 a.download = `compliance-report-${timestamp}.docx`;
                 document.body.appendChild(a);
                 a.click();
@@ -408,6 +383,7 @@
                 downloadButton.disabled = false;
                 downloadButton.textContent = "DOWNLOAD";
             }
+        });
         });
     </script>
 

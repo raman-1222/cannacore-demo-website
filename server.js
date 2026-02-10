@@ -7,6 +7,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const { Document, Packer, Paragraph, AlignmentType, convertInchesToTwip } = require('docx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -404,6 +405,50 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     res.status(500).json({
       error: error.response?.data?.errors?.[0]?.message || error.message || 'An error occurred while processing your request'
     });
+  }
+});
+
+// Download compliance report as Word document
+app.post('/api/download-report', async (req, res) => {
+  try {
+    const { content } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ error: 'No content provided' });
+    }
+
+    const lines = content.split('\n').filter(line => line.trim());
+    
+    const paragraphs = lines.map(line => 
+      new Paragraph({
+        text: line.trim(),
+        spacing: { after: 100 }
+      })
+    );
+
+    const doc = new Document({
+      sections: [{
+        properties: {
+          margin: {
+            top: convertInchesToTwip(1),
+            bottom: convertInchesToTwip(1),
+            left: convertInchesToTwip(1),
+            right: convertInchesToTwip(1)
+          }
+        },
+        children: paragraphs
+      }]
+    });
+
+    const blob = await Packer.toBuffer(doc);
+    
+    const timestamp = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="compliance-report-${timestamp}.docx"`);
+    res.send(blob);
+  } catch (error) {
+    console.error('Error generating Word document:', error);
+    res.status(500).json({ error: 'Failed to generate document' });
   }
 });
 
