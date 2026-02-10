@@ -470,8 +470,15 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
 
     // Assemble chunks
     console.log('Assembling chunks...');
-    const assembledBuffer = Buffer.concat(chunks);
-    console.log(`Assembled buffer size: ${assembledBuffer.length} bytes`);
+    let assembledBuffer = Buffer.concat(chunks);
+    console.log(`Assembled buffer size: ${(assembledBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+
+    // Compress PDF if it's large
+    if (assembledBuffer.length > 20 * 1024 * 1024) { // > 20MB
+      console.log('File is large - compressing...');
+      assembledBuffer = await compressPdf(assembledBuffer);
+      console.log(`Compressed size: ${(assembledBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+    }
 
     // Upload to Vercel Blob
     const blobFileName = `${fileType}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${fileName}`;
@@ -561,53 +568,6 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
     let jurisdictionsArray = Array.isArray(jurisdictions) ? jurisdictions : [jurisdictions];
     let imageUrlArray = Array.isArray(imageurl) ? imageurl : [imageurl];
     let coaUrlArray = coaurl ? (Array.isArray(coaurl) ? coaurl : [coaurl]) : [];
-
-    // Compress PDFs if present
-    console.log('[COMPRESS] Processing files...');
-    const compressedImageUrls = [];
-    for (const url of imageUrlArray) {
-      if (url.includes('.pdf')) {
-        try {
-          const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
-          const pdfBuffer = Buffer.from(response.data);
-          const compressed = await compressPdf(pdfBuffer);
-          
-          const fileName = `compressed/${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
-          const blob = await put(fileName, compressed, { access: 'public', contentType: 'application/pdf' });
-          compressedImageUrls.push(blob.url);
-          console.log(`[COMPRESS] Image PDF compressed: ${blob.url}`);
-        } catch (err) {
-          console.error('[COMPRESS] Image PDF error:', err.message);
-          compressedImageUrls.push(url); // Fall back to original
-        }
-      } else {
-        compressedImageUrls.push(url);
-      }
-    }
-
-    const compressedCoaUrls = [];
-    for (const url of coaUrlArray) {
-      if (url.includes('.pdf')) {
-        try {
-          const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
-          const pdfBuffer = Buffer.from(response.data);
-          const compressed = await compressPdf(pdfBuffer);
-          
-          const fileName = `compressed/${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
-          const blob = await put(fileName, compressed, { access: 'public', contentType: 'application/pdf' });
-          compressedCoaUrls.push(blob.url);
-          console.log(`[COMPRESS] COA PDF compressed: ${blob.url}`);
-        } catch (err) {
-          console.error('[COMPRESS] COA PDF error:', err.message);
-          compressedCoaUrls.push(url); // Fall back to original
-        }
-      } else {
-        compressedCoaUrls.push(url);
-      }
-    }
-
-    imageUrlArray = compressedImageUrls;
-    coaUrlArray = compressedCoaUrls;
 
     console.log('=== LAMATIC API CALL ===');
     console.log('Image URLs:', imageUrlArray);
