@@ -20,6 +20,10 @@ const chunkStorage = new Map();
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (safe margin for Vercel 6MB limit)
 const UPLOAD_TIMEOUT = 30 * 60 * 1000; // 30 minute timeout for incomplete uploads
 
+// Track uploaded files by requestId for cleanup after processing
+const uploadedFilesMap = new Map();
+const FILES_CLEANUP_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+
 // Periodically clean up old uploads
 setInterval(() => {
   const now = Date.now();
@@ -741,27 +745,11 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
 
     console.log('Workflow submitted with requestId:', requestId);
 
-    // Clean up uploaded files from Blob in the background (don't wait)
-    setImmediate(async () => {
-      try {
-        const urlsToDelete = [...imageUrlArray, ...coaUrlArray].filter(url => 
-          url && url.includes('blob.vercel-storage.com')
-        );
-        
-        console.log(`[CLEANUP] Deleting ${urlsToDelete.length} files from Blob...`);
-        
-        for (const url of urlsToDelete) {
-          try {
-            await del(url);
-            console.log(`[CLEANUP] Deleted: ${url.substring(0, 50)}...`);
-          } catch (err) {
-            console.error(`[CLEANUP] Failed to delete ${url.substring(0, 50)}:`, err.message);
-          }
-        }
-        console.log('[CLEANUP] Done');
-      } catch (cleanupErr) {
-        console.error('[CLEANUP] Error:', cleanupErr.message);
-      }
+    // Store uploaded file URLs for cleanup after results are received
+    uploadedFilesMap.set(requestId, {
+      imageUrls: imageUrlArray,
+      coaUrls: coaUrlArray,
+      createdAt: Date.now()
     });
 
     res.json({
@@ -773,38 +761,115 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
 
   } catch (error) {
     console.error('Error processing compliance check:', error);
-    
-    // Still try to clean up uploaded files even on error
-    if (imageUrlArray || coaUrlArray) {
-      setImmediate(async () => {
-        try {
-          const urlsToDelete = [...(imageUrlArray || []), ...(coaUrlArray || [])].filter(url => 
-            url && url.includes('blob.vercel-storage.com')
-          );
-          
-          if (urlsToDelete.length > 0) {
-            console.log(`[CLEANUP-ERROR] Deleting ${urlsToDelete.length} files from Blob...`);
-            
-            for (const url of urlsToDelete) {
-              try {
-                await del(url);
-                console.log(`[CLEANUP-ERROR] Deleted: ${url.substring(0, 50)}...`);
-              } catch (err) {
-                console.error(`[CLEANUP-ERROR] Failed to delete ${url.substring(0, 50)}:`, err.message);
-              }
-            }
-          }
-        } catch (cleanupErr) {
-          console.error('[CLEANUP-ERROR] Error:', cleanupErr.message);
-        }
-      });
-    }
-    
     res.status(500).json({
       error: error.response?.data?.errors?.[0]?.message || error.message || 'An error occurred while processing your request'
     });
   }
 });
+
+// Poll for results and clean up files when done
+app.get('/api/results/:requestId', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    
+    if (!requestId) {
+      return res.status(400).json({ error: 'requestId is required' });
+    }
+    
+    const lamaticApiKey = process.env.LAMATIC_API_KEY;
+    const lamaticApiUrl = process.env.LAMATIC_API_URL;
+    
+    if (!lamaticApiKey || !lamaticApiUrl) {
+      return res.status(500).json({ error: 'Missing Lamatic configuration' });
+    }
+
+    console.log(`[POLL] Checking results for requestId: ${requestId}`);
+    
+    // Query for results
+    const graphqlQuery = `
+      query getResult($requestId: String!) {
+        getResult(requestId: $requestId) {
+          result
+          status
+          error
+        }
+      }
+    `;
+
+    const requestPayload = {
+      query: graphqlQuery,
+      variables: { requestId }
+    };
+
+    const response = await axios.post(lamaticApiUrl, requestPayload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${lamaticApiKey}`
+      },
+      timeout: 30000,
+      validateStatus: () => true
+    });
+
+    console.log('[POLL] Response status:', response.status);
+    
+    if (response.status !== 200) {
+      return res.status(response.status).json(response.data);
+    }
+
+    const result = response.data.data?.getResult;
+    
+    // If results are done (either success or error), clean up uploaded files
+    if (result && (result.status === 'completed' || result.error)) {
+      console.log(`[POLL] Results ready for ${requestId}, cleaning up files...`);
+      
+      setImmediate(async () => {
+        try {
+          const uploadedData = uploadedFilesMap.get(requestId);
+          if (uploadedData) {
+            const urlsToDelete = [
+              ...uploadedData.imageUrls,
+              ...uploadedData.coaUrls
+            ].filter(url => url && url.includes('blob.vercel-storage.com'));
+            
+            if (urlsToDelete.length > 0) {
+              console.log(`[CLEANUP] Deleting ${urlsToDelete.length} files for requestId ${requestId}...`);
+              
+              for (const url of urlsToDelete) {
+                try {
+                  await del(url);
+                  console.log(`[CLEANUP] Deleted: ${url.substring(0, 50)}...`);
+                } catch (err) {
+                  console.error(`[CLEANUP] Failed to delete ${url.substring(0, 50)}:`, err.message);
+                }
+              }
+              
+              uploadedFilesMap.delete(requestId);
+              console.log('[CLEANUP] Done');
+            }
+          }
+        } catch (cleanupErr) {
+          console.error('[CLEANUP] Error:', cleanupErr.message);
+        }
+      });
+    }
+
+    res.json(response.data);
+  } catch (error) {
+    console.error('[POLL] Error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Clean up old entries from uploadedFilesMap periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [requestId, data] of uploadedFilesMap.entries()) {
+    if (now - data.createdAt > FILES_CLEANUP_TIMEOUT) {
+      console.log(`[CLEANUP] Removing stale entry from map: ${requestId}`);
+      uploadedFilesMap.delete(requestId);
+    }
+  }
+}, 60 * 60 * 1000); // Check every hour
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
