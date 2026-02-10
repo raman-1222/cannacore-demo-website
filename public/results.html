@@ -9,8 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
 </head>
 
 <body>
@@ -356,7 +355,19 @@
                 const htmlContent = resultsSection.innerText || resultsSection.textContent;
                 const contentLines = htmlContent.split('\n').filter(line => line.trim());
 
-                const { Document, Packer, Paragraph, AlignmentType, convertInchesToTwip } = window.docx;
+                // Wait for docx library to be available
+                const waitForDocx = () => {
+                    return new Promise((resolve) => {
+                        if (window.docx) {
+                            resolve(window.docx);
+                        } else {
+                            setTimeout(() => waitForDocx().then(resolve), 100);
+                        }
+                    });
+                };
+
+                const docxLib = await waitForDocx();
+                const { Document, Packer, Paragraph, convertInchesToTwip } = docxLib;
 
                 const paragraphs = contentLines.map(line => {
                     return new Paragraph({
@@ -380,16 +391,15 @@
                 });
 
                 const timestamp = new Date().toISOString().split('T')[0];
-                Packer.toBlob(doc).then(blob => {
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `compliance-report-${timestamp}.docx`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                });
+                const blob = await Packer.toBlob(doc);
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `compliance-report-${timestamp}.docx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
             } catch (error) {
                 console.error('Error generating Word document:', error);
                 alert('Error generating Word document. Please try again.');
