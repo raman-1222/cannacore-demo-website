@@ -237,7 +237,7 @@ function formatFileSize(bytes) {
 }
 
 function updateSubmitButton() {
-    submitBtn.disabled = !(selectedImages.length > 0 || selectedLabelsPdf) || selectedJurisdictions.length === 0;
+    submitBtn.disabled = !(selectedImages.length > 0 || selectedPdfs || selectedLabelsPdf) || selectedJurisdictions.length === 0;
 }
 
 // **CHUNKED FILE UPLOAD UTILITY**
@@ -398,14 +398,13 @@ uploadForm.addEventListener('submit', async e => {
     loadingState.innerHTML = '<div class="loading-spinner"></div><p>Preparing files...</p>';
 
     try {
-        // Validate that at least images or labels are selected
-        if (selectedImages.length === 0 && !selectedLabelsPdf) {
-            throw new Error('Please upload either product images or labels PDF');
+        // Validate that at least one file is selected
+        if (selectedImages.length === 0 && !selectedPdfs && !selectedLabelsPdf) {
+            throw new Error('Please upload at least one file (image or PDF)');
         }
 
         const imageUrls = [];
-        const pdfUrls = [];
-        const labelUrls = [];
+        const coaUrls = [];
 
         // Upload all images via chunking (ensures compatibility)
         if (selectedImages.length > 0) {
@@ -424,8 +423,6 @@ uploadForm.addEventListener('submit', async e => {
                     throw imgError;
                 }
             }
-        } else {
-            console.log('No images selected');
         }
 
         // Upload COA PDF via chunking
@@ -434,7 +431,7 @@ uploadForm.addEventListener('submit', async e => {
             loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading COA PDF...<br/>${selectedPdfs.name}</p>`;
             try {
                 const url = await uploadFileInChunks(selectedPdfs, 'pdfs');
-                pdfUrls.push(url);
+                coaUrls.push(url);
                 console.log(`COA PDF uploaded successfully: ${url}`);
             } catch (pdfError) {
                 console.error('Failed to upload COA PDF:', pdfError);
@@ -448,7 +445,7 @@ uploadForm.addEventListener('submit', async e => {
             loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading Labels PDF...<br/>${selectedLabelsPdf.name}</p>`;
             try {
                 const url = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
-                labelUrls.push(url);
+                imageUrls.push(url);
                 console.log(`Labels PDF uploaded successfully: ${url}`);
             } catch (labelError) {
                 console.error('Failed to upload Labels PDF:', labelError);
@@ -456,7 +453,7 @@ uploadForm.addEventListener('submit', async e => {
             }
         }
 
-        console.log(`All files uploaded. Images: ${imageUrls.length}, PDFs: ${pdfUrls.length}, Labels: ${labelUrls.length}`);
+        console.log(`All files uploaded. Images: ${imageUrls.length}, COA PDFs: ${coaUrls.length}`);
 
         loadingState.innerHTML = '<div class="loading-spinner"></div><p>Submitting compliance check...</p>';
 
@@ -466,8 +463,7 @@ uploadForm.addEventListener('submit', async e => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 imageurl: imageUrls,
-                coaurl: pdfUrls,
-                labelurl: labelUrls,
+                coaurl: coaUrls,
                 jurisdictions: selectedJurisdictions,
                 date: new Date().toLocaleDateString(),
                 time: new Date().toLocaleTimeString(),

@@ -507,10 +507,10 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
 // API endpoint for compliance check with pre-uploaded URLs
 app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, res) => {
   try {
-    const { imageurl, coaurl, labelurl, jurisdictions, date, time, company_name, product_type } = req.body;
+    const { imageurl, coaurl, jurisdictions, date, time, company_name, product_type } = req.body;
 
     if (!imageurl || imageurl.length === 0) {
-      return res.status(400).json({ error: 'At least one image is required' });
+      return res.status(400).json({ error: 'At least one file (image or PDF) is required' });
     }
 
     if (!jurisdictions || jurisdictions.length === 0) {
@@ -528,11 +528,12 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
 
     // Ensure jurisdictions is an array
     let jurisdictionsArray = Array.isArray(jurisdictions) ? jurisdictions : [jurisdictions];
+    let imageUrlArray = Array.isArray(imageurl) ? imageurl : [imageurl];
+    let coaUrlArray = coaurl ? (Array.isArray(coaurl) ? coaurl : [coaurl]) : [];
 
     console.log('=== LAMATIC API CALL ===');
-    console.log('Image URLs:', imageurl);
-    console.log('COA URLs:', coaurl);
-    console.log('Label URLs:', labelurl);
+    console.log('Image URLs:', imageUrlArray);
+    console.log('COA URLs:', coaUrlArray);
     console.log('Jurisdictions:', jurisdictionsArray);
 
     const graphqlQuery = `
@@ -540,7 +541,6 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
         $workflowId: String!
         $imageurl: [String]
         $coaurl: [String]
-        $labelurl: [String]
         $jurisdictions: [String]
         $date: String
         $time: String
@@ -552,7 +552,6 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
           payload: {
             imageurl: $imageurl
             coaurl: $coaurl
-            labelurl: $labelurl
             jurisdictions: $jurisdictions
             date: $date
             time: $time
@@ -570,9 +569,8 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
       query: graphqlQuery,
       variables: {
         workflowId: workflowId,
-        imageurl: Array.isArray(imageurl) ? imageurl : [imageurl],
-        coaurl: coaurl || [],
-        labelurl: labelurl || [],
+        imageurl: imageUrlArray,
+        coaurl: coaUrlArray,
         jurisdictions: jurisdictionsArray,
         date: date || new Date().toLocaleDateString(),
         time: time || new Date().toLocaleTimeString(),
