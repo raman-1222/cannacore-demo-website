@@ -7,6 +7,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { put } = require('@vercel/blob');
 const crypto = require('crypto');
+const { PDFDocument } = require('pdf-lib');
 
 const app = express();
 
@@ -504,6 +505,81 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
   }
 });
 
+// Helper function to split large PDFs into 50MB chunks for Gemini compatibility
+async function splitLargePdf(pdfUrl, maxSizeBytes = 50 * 1024 * 1024) {
+  try {
+    console.log(`Checking PDF size at: ${pdfUrl}`);
+    
+    // Download the PDF
+    const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
+    const pdfBuffer = Buffer.from(response.data);
+    const fileSize = pdfBuffer.length;
+    
+    console.log(`PDF size: ${(fileSize / 1024 / 1024).toFixed(2)}MB`);
+    
+    // If under 50MB, return original URL
+    if (fileSize <= maxSizeBytes) {
+      console.log('PDF is within limit, no splitting needed');
+      return [pdfUrl];
+    }
+    
+    console.log('PDF exceeds 50MB limit, splitting into chunks...');
+    
+    // Load PDF
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    const totalPages = pdfDoc.getPageCount();
+    console.log(`Total pages: ${totalPages}`);
+    
+    // Calculate pages per chunk (rough estimate: ~100KB per page average)
+    const avgPageSize = fileSize / totalPages;
+    const pagesPerChunk = Math.max(1, Math.floor(maxSizeBytes / avgPageSize));
+    console.log(`Estimated pages per 50MB chunk: ${pagesPerChunk}`);
+    
+    const chunkUrls = [];
+    let page = 0;
+    let chunkIndex = 0;
+    
+    // Split PDF into chunks
+    while (page < totalPages) {
+      const chunkDoc = await PDFDocument.create();
+      const endPage = Math.min(page + pagesPerChunk, totalPages);
+      
+      console.log(`Creating chunk ${chunkIndex + 1}: pages ${page + 1}-${endPage}`);
+      
+      // Copy pages to new document
+      const pages = await chunkDoc.copyPages(pdfDoc, Array.from(
+        { length: endPage - page },
+        (_, i) => page + i
+      ));
+      pages.forEach(p => chunkDoc.addPage(p));
+      
+      // Serialize and upload
+      const chunkBuffer = await chunkDoc.save();
+      const fileName = `pdf-chunks/${Date.now()}-chunk-${chunkIndex}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+      
+      console.log(`Uploading chunk ${chunkIndex + 1}: ${(chunkBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+      const blob = await put(fileName, chunkBuffer, {
+        access: 'public',
+        contentType: 'application/pdf'
+      });
+      
+      chunkUrls.push(blob.url);
+      console.log(`Chunk ${chunkIndex + 1} uploaded: ${blob.url}`);
+      
+      page = endPage;
+      chunkIndex++;
+    }
+    
+    console.log(`PDF split into ${chunkUrls.length} chunks`);
+    return chunkUrls;
+    
+  } catch (error) {
+    console.error('Error splitting PDF:', error.message);
+    // Return original URL if splitting fails
+    return [pdfUrl];
+  }
+}
+
 // API endpoint for compliance check with pre-uploaded URLs
 app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, res) => {
   try {
@@ -531,9 +607,40 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
     let imageUrlArray = Array.isArray(imageurl) ? imageurl : [imageurl];
     let coaUrlArray = coaurl ? (Array.isArray(coaurl) ? coaurl : [coaurl]) : [];
 
+    console.log('=== CHECKING FILE SIZES FOR GEMINI COMPATIBILITY ===');
+    console.log('Original Image URLs:', imageUrlArray);
+    console.log('Original COA URLs:', coaUrlArray);
+
+    // Check and split large PDFs in imageurl array
+    const processedImageUrls = [];
+    for (const url of imageUrlArray) {
+      if (url.includes('.pdf')) {
+        console.log(`Processing PDF in imageurl: ${url}`);
+        const splitUrls = await splitLargePdf(url);
+        processedImageUrls.push(...splitUrls);
+      } else {
+        processedImageUrls.push(url);
+      }
+    }
+    
+    // Check and split large PDFs in coaurl array
+    const processedCoaUrls = [];
+    for (const url of coaUrlArray) {
+      if (url.includes('.pdf')) {
+        console.log(`Processing PDF in coaurl: ${url}`);
+        const splitUrls = await splitLargePdf(url);
+        processedCoaUrls.push(...splitUrls);
+      } else {
+        processedCoaUrls.push(url);
+      }
+    }
+
+    imageUrlArray = processedImageUrls;
+    coaUrlArray = processedCoaUrls;
+
     console.log('=== LAMATIC API CALL ===');
-    console.log('Image URLs:', imageUrlArray);
-    console.log('COA URLs:', coaUrlArray);
+    console.log('Processed Image URLs:', imageUrlArray);
+    console.log('Processed COA URLs:', coaUrlArray);
     console.log('Jurisdictions:', jurisdictionsArray);
 
     const graphqlQuery = `
