@@ -279,11 +279,36 @@ async function uploadFileInChunks(file, fileType) {
 
             const result = await response.json();
             uploadedBytes = end;
-            console.log(`Chunk ${i + 1} uploaded successfully. Progress: ${result.progress}%`);
+            console.log(`Chunk ${i + 1}/${totalChunks} uploaded successfully. Progress: ${result.progress}%`);
 
         } catch (error) {
             console.error(`Error uploading chunk ${i + 1}:`, error);
-            throw error;
+            // Retry once on failure
+            console.log(`Retrying chunk ${i + 1}...`);
+            try {
+                const retryResponse = await fetch('/api/upload-chunk', {
+                    method: 'POST',
+                    headers: {
+                        'x-upload-id': uploadId,
+                        'x-chunk-index': i,
+                        'x-total-chunks': totalChunks,
+                        'x-file-name': file.name,
+                        'x-file-type': fileType,
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: chunk
+                });
+
+                if (!retryResponse.ok) {
+                    throw new Error(`Retry also failed for chunk ${i + 1}`);
+                }
+
+                const retryResult = await retryResponse.json();
+                console.log(`Chunk ${i + 1} uploaded on retry. Progress: ${retryResult.progress}%`);
+            } catch (retryError) {
+                console.error(`Chunk ${i + 1} failed even after retry:`, retryError);
+                throw retryError;
+            }
         }
     }
 
@@ -291,29 +316,75 @@ async function uploadFileInChunks(file, fileType) {
     console.log('All chunks uploaded, finalizing...');
     loadingState.innerHTML = `<div class="loading-spinner"></div><p>Finalizing ${file.name}...</p>`;
 
-    try {
-        const response = await fetch('/api/finalize-chunks', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                uploadId: uploadId,
-                fileType: fileType
-            })
-        });
+    let finalizeAttempts = 0;
+    const maxFinalizeAttempts = 3;
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to finalize upload');
+    while (finalizeAttempts < maxFinalizeAttempts) {
+        try {
+            finalizeAttempts++;
+            const response = await fetch('/api/finalize-chunks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uploadId: uploadId,
+                    fileType: fileType
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                
+                // If some chunks are missing, retry uploading them
+                if (error.missingChunks && error.missingChunks.length > 0) {
+                    console.log('Retrying missing chunks:', error.missingChunks);
+                    
+                    for (const chunkIdx of error.missingChunks) {
+                        const start = chunkIdx * CHUNK_SIZE;
+                        const end = Math.min(start + CHUNK_SIZE, file.size);
+                        const chunkData = file.slice(start, end);
+                        
+                        console.log(`Retrying missing chunk ${chunkIdx}...`);
+                        const retryResponse = await fetch('/api/upload-chunk', {
+                            method: 'POST',
+                            headers: {
+                                'x-upload-id': uploadId,
+                                'x-chunk-index': chunkIdx,
+                                'x-total-chunks': totalChunks,
+                                'x-file-name': file.name,
+                                'x-file-type': fileType,
+                                'Content-Type': 'application/octet-stream'
+                            },
+                            body: chunkData
+                        });
+                        
+                        if (!retryResponse.ok) {
+                            throw new Error(`Failed to retry chunk ${chunkIdx}`);
+                        }
+                    }
+                    
+                    // Wait a moment before retrying finalization
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue; // Retry finalization
+                }
+                
+                throw new Error(error.error || 'Failed to finalize upload');
+            }
+
+            const result = await response.json();
+            console.log(`File finalized and uploaded to: ${result.url}`);
+            return result.url;
+
+        } catch (error) {
+            console.error(`Finalization attempt ${finalizeAttempts} failed:`, error);
+            if (finalizeAttempts < maxFinalizeAttempts) {
+                console.log(`Retrying finalization (${finalizeAttempts}/${maxFinalizeAttempts})...`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+            } else {
+                throw error;
+            }
         }
-
-        const result = await response.json();
-        console.log(`File finalized and uploaded to: ${result.url}`);
-        return result.url;
-
-    } catch (error) {
-        console.error('Error finalizing upload:', error);
-        throw error;
     }
+
 }
 
 // HANDLE SUBMIT

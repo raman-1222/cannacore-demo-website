@@ -16,6 +16,18 @@ app.set('trust proxy', 1);
 // In-memory chunk storage: { uploadId: { chunks: [Buffer, Buffer...], metadata: {...} } }
 const chunkStorage = new Map();
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (safe margin for Vercel 6MB limit)
+const UPLOAD_TIMEOUT = 30 * 60 * 1000; // 30 minute timeout for incomplete uploads
+
+// Periodically clean up old uploads
+setInterval(() => {
+  const now = Date.now();
+  for (const [uploadId, uploadData] of chunkStorage.entries()) {
+    if (now - uploadData.createdAt > UPLOAD_TIMEOUT) {
+      console.log(`Cleaning up expired upload: ${uploadId}`);
+      chunkStorage.delete(uploadId);
+    }
+  }
+}, 5 * 60 * 1000); // Check every 5 minutes
 
 // Rate limiting configuration
 const apiLimiter = rateLimit({
@@ -434,14 +446,25 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
 
     // Check if all chunks received
     if (receivedChunks !== totalChunks) {
+      // Find which chunks are missing
+      const missingChunks = [];
+      for (let i = 0; i < totalChunks; i++) {
+        if (chunks[i] === null) {
+          missingChunks.push(i);
+        }
+      }
+      console.error(`Missing chunks: ${missingChunks.join(', ')}`);
       return res.status(400).json({ 
-        error: `Not all chunks received. Got ${receivedChunks}/${totalChunks}` 
+        error: `Not all chunks received. Got ${receivedChunks}/${totalChunks}`,
+        missingChunks: missingChunks
       });
     }
 
     // Verify all chunks exist
-    if (chunks.some(chunk => chunk === null)) {
-      return res.status(400).json({ error: 'Some chunks are missing' });
+    for (let i = 0; i < totalChunks; i++) {
+      if (!chunks[i]) {
+        return res.status(400).json({ error: `Chunk ${i} is missing or empty` });
+      }
     }
 
     // Assemble chunks
