@@ -15,7 +15,7 @@ app.set('trust proxy', 1);
 
 // In-memory chunk storage: { uploadId: { chunks: [Buffer, Buffer...], metadata: {...} } }
 const chunkStorage = new Map();
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (safe margin for Vercel 6MB limit)
 
 // Rate limiting configuration
 const apiLimiter = rateLimit({
@@ -357,10 +357,14 @@ app.get('/api/results/:requestId', async (req, res) => {
 
 // **CHUNKED FILE UPLOAD ENDPOINTS**
 
-// Upload a single file chunk
-app.post('/api/upload-chunk', express.raw({ type: 'application/octet-stream', limit: '10mb' }), (req, res) => {
+// Upload a single file chunk - use raw middleware to minimize overhead
+app.post('/api/upload-chunk', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
   try {
-    const { uploadId, chunkIndex, totalChunks, fileName, fileType } = req.query;
+    const uploadId = req.headers['x-upload-id'];
+    const chunkIndex = parseInt(req.headers['x-chunk-index']);
+    const totalChunks = parseInt(req.headers['x-total-chunks']);
+    const fileName = req.headers['x-file-name'];
+    const fileType = req.headers['x-file-type'];
     
     if (!uploadId || chunkIndex === undefined || !totalChunks || !fileName) {
       return res.status(400).json({ error: 'Missing required parameters' });
@@ -371,16 +375,13 @@ app.post('/api/upload-chunk', express.raw({ type: 'application/octet-stream', li
       return res.status(400).json({ error: 'No chunk data provided' });
     }
 
-    const index = parseInt(chunkIndex);
-    const total = parseInt(totalChunks);
-
-    console.log(`Received chunk ${index}/${total} for upload ${uploadId}, size: ${chunk.length} bytes`);
+    console.log(`Received chunk ${chunkIndex}/${totalChunks} for upload ${uploadId}, size: ${chunk.length} bytes`);
 
     // Initialize storage for this upload if needed
     if (!chunkStorage.has(uploadId)) {
       chunkStorage.set(uploadId, {
-        chunks: new Array(total).fill(null),
-        metadata: { fileName, fileType, totalChunks: total, receivedChunks: 0 },
+        chunks: new Array(totalChunks).fill(null),
+        metadata: { fileName, fileType, totalChunks: totalChunks, receivedChunks: 0 },
         createdAt: Date.now()
       });
     }
@@ -388,22 +389,22 @@ app.post('/api/upload-chunk', express.raw({ type: 'application/octet-stream', li
     const uploadData = chunkStorage.get(uploadId);
     
     // Store this chunk
-    if (uploadData.chunks[index] !== null) {
-      return res.status(400).json({ error: `Chunk ${index} already uploaded` });
+    if (uploadData.chunks[chunkIndex] !== null) {
+      return res.status(400).json({ error: `Chunk ${chunkIndex} already uploaded` });
     }
 
-    uploadData.chunks[index] = chunk;
+    uploadData.chunks[chunkIndex] = chunk;
     uploadData.metadata.receivedChunks++;
 
-    console.log(`Stored chunk ${index}. Progress: ${uploadData.metadata.receivedChunks}/${total}`);
+    console.log(`Stored chunk ${chunkIndex}. Progress: ${uploadData.metadata.receivedChunks}/${totalChunks}`);
 
     res.json({
       success: true,
       uploadId,
-      chunkIndex: index,
+      chunkIndex: chunkIndex,
       receivedChunks: uploadData.metadata.receivedChunks,
-      totalChunks: total,
-      progress: Math.round((uploadData.metadata.receivedChunks / total) * 100)
+      totalChunks: totalChunks,
+      progress: Math.round((uploadData.metadata.receivedChunks / totalChunks) * 100)
     });
 
   } catch (error) {

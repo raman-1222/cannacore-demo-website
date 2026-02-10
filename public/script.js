@@ -241,7 +241,7 @@ function updateSubmitButton() {
 }
 
 // **CHUNKED FILE UPLOAD UTILITY**
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (safe margin for Vercel 6MB limit)
 
 async function uploadFileInChunks(file, fileType) {
     const uploadId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -259,27 +259,17 @@ async function uploadFileInChunks(file, fileType) {
         loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...<br/>${formatFileSize(end)} / ${formatFileSize(file.size)}</p>`;
 
         try {
-            const response = await fetch('/api/upload-chunk?' + new URLSearchParams({
-                uploadId: uploadId,
-                chunkIndex: i,
-                totalChunks: totalChunks,
-                fileName: file.name,
-                fileType: fileType
-            }), {
+            const response = await fetch('/api/upload-chunk', {
                 method: 'POST',
-                body: chunk,
                 headers: {
+                    'x-upload-id': uploadId,
+                    'x-chunk-index': i,
+                    'x-total-chunks': totalChunks,
+                    'x-file-name': file.name,
+                    'x-file-type': fileType,
                     'Content-Type': 'application/octet-stream'
-                }
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `Failed to upload chunk ${i + 1}`);
-            }
-
-            const result = await response.json();
-            uploadedBytes = end;
+                },
+                body: chunk
             console.log(`Chunk ${i + 1} uploaded successfully. Progress: ${result.progress}%`);
 
         } catch (error) {
