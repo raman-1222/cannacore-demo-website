@@ -480,6 +480,135 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
   }
 });
 
+// API endpoint for compliance check with pre-uploaded URLs
+app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, res) => {
+  try {
+    const { imageurl, coaurl, labelurl, jurisdictions, date, time, company_name, product_type } = req.body;
+
+    if (!imageurl || imageurl.length === 0) {
+      return res.status(400).json({ error: 'At least one image is required' });
+    }
+
+    if (!jurisdictions || jurisdictions.length === 0) {
+      return res.status(400).json({ error: 'At least one jurisdiction is required' });
+    }
+
+    const lamaticApiKey = process.env.LAMATIC_API_KEY;
+    const workflowId = process.env.LAMATIC_WORKFLOW_ID;
+    const projectId = process.env.LAMATIC_PROJECT_ID;
+    const lamaticApiUrl = process.env.LAMATIC_API_URL;
+
+    if (!lamaticApiKey || !workflowId || !projectId || !lamaticApiUrl) {
+      return res.status(500).json({ error: 'Missing Lamatic configuration' });
+    }
+
+    // Ensure jurisdictions is an array
+    let jurisdictionsArray = Array.isArray(jurisdictions) ? jurisdictions : [jurisdictions];
+
+    console.log('=== LAMATIC API CALL ===');
+    console.log('Image URLs:', imageurl);
+    console.log('COA URLs:', coaurl);
+    console.log('Label URLs:', labelurl);
+    console.log('Jurisdictions:', jurisdictionsArray);
+
+    const graphqlQuery = `
+      query executeWorkflow(
+        $workflowId: String!
+        $imageurl: [String]
+        $coaurl: [String]
+        $labelurl: [String]
+        $jurisdictions: [String]
+        $date: String
+        $time: String
+        $company_name: String
+        $product_type: String
+      ) {
+        executeWorkflow(
+          workflowId: $workflowId
+          payload: {
+            imageurl: $imageurl
+            coaurl: $coaurl
+            labelurl: $labelurl
+            jurisdictions: $jurisdictions
+            date: $date
+            time: $time
+            company_name: $company_name
+            product_type: $product_type
+          }
+        ) {
+          status
+          result
+        }
+      }
+    `;
+
+    const requestPayload = {
+      query: graphqlQuery,
+      variables: {
+        workflowId: workflowId,
+        imageurl: Array.isArray(imageurl) ? imageurl : [imageurl],
+        coaurl: coaurl || [],
+        labelurl: labelurl || [],
+        jurisdictions: jurisdictionsArray,
+        date: date || new Date().toLocaleDateString(),
+        time: time || new Date().toLocaleTimeString(),
+        company_name: company_name || 'N/A',
+        product_type: product_type || 'N/A'
+      }
+    };
+
+    console.log('Request Payload:', JSON.stringify(requestPayload).substring(0, 500) + '...');
+
+    const response = await axios.post(lamaticApiUrl, requestPayload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${lamaticApiKey}`,
+        'x-project-id': projectId
+      },
+      timeout: 60000,
+      validateStatus: () => true
+    });
+
+    console.log('Lamatic API Response Status:', response.status);
+    console.log('Lamatic API Response Body:', JSON.stringify(response.data, null, 2));
+
+    if (response.status !== 200) {
+      throw new Error(`Lamatic API returned ${response.status}: ${JSON.stringify(response.data)}`);
+    }
+
+    if (response.data.errors) {
+      throw new Error(`Lamatic API Error: ${response.data.errors[0]?.message}`);
+    }
+
+    const result = response.data.data?.executeWorkflow?.result;
+
+    if (!result) {
+      throw new Error('No output from Lamatic API');
+    }
+
+    // Get requestId for polling
+    const requestId = result.requestId;
+    if (!requestId) {
+      throw new Error('No requestId returned from Lamatic - cannot poll for results');
+    }
+
+    console.log('Workflow submitted with requestId:', requestId);
+
+    res.json({
+      success: true,
+      status: 'pending',
+      requestId: requestId,
+      message: 'Compliance check submitted. Please wait for results.'
+    });
+
+  } catch (error) {
+    console.error('Error processing compliance check:', error);
+    res.status(500).json({
+      error: error.response?.data?.errors?.[0]?.message || error.message || 'An error occurred while processing your request'
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });

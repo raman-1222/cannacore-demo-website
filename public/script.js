@@ -328,46 +328,78 @@ uploadForm.addEventListener('submit', async e => {
     loadingState.innerHTML = '<div class="loading-spinner"></div><p>Preparing files...</p>';
 
     try {
-        // Upload images using multipart (usually small)
-        const formData = new FormData();
-        selectedImages.forEach(img => formData.append("images", img));
-        
-        // Check if PDFs are large and use chunking if needed
-        const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2MB threshold for chunking
-        let pdfUrl = null;
-        let labelUrl = null;
+        const imageUrls = [];
+        const pdfUrls = [];
+        const labelUrls = [];
 
-        // Upload COA PDF
+        // Upload all images via chunking (ensures compatibility)
+        for (const img of selectedImages) {
+            console.log(`Uploading image: ${img.name}`);
+            const url = await uploadFileInChunks(img, 'images');
+            imageUrls.push(url);
+        }
+
+        // Upload COA PDF via chunking
         if (selectedPdfs) {
-            console.log(`COA PDF size: ${selectedPdfs.size} bytes, Large file threshold: ${LARGE_FILE_THRESHOLD}`);
-            if (selectedPdfs.size > LARGE_FILE_THRESHOLD) {
-                console.log('Using chunked upload for COA PDF');
-                pdfUrl = await uploadFileInChunks(selectedPdfs, 'pdfs');
-            } else {
-                formData.append("pdf", selectedPdfs);
-            }
+            console.log(`Uploading COA PDF: ${selectedPdfs.name}`);
+            const url = await uploadFileInChunks(selectedPdfs, 'pdfs');
+            pdfUrls.push(url);
         }
 
-        // Upload Labels PDF
+        // Upload Labels PDF via chunking
         if (selectedLabelsPdf) {
-            console.log(`Labels PDF size: ${selectedLabelsPdf.size} bytes`);
-            if (selectedLabelsPdf.size > LARGE_FILE_THRESHOLD) {
-                console.log('Using chunked upload for Labels PDF');
-                labelUrl = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
-            } else {
-                formData.append("labelsPdf", selectedLabelsPdf);
-            }
+            console.log(`Uploading Labels PDF: ${selectedLabelsPdf.name}`);
+            const url = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
+            labelUrls.push(url);
         }
-
-        // Add selected jurisdictions
-        selectedJurisdictions.forEach(jurisdiction => {
-            formData.append("jurisdictions", jurisdiction);
-        });
 
         loadingState.innerHTML = '<div class="loading-spinner"></div><p>Submitting compliance check...</p>';
 
-        const response = await fetch("/api/check-compliance", {
+        // Send URLs to backend via JSON
+        const response = await fetch("/api/check-compliance-urls", {
             method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                imageurl: imageUrls,
+                coaurl: pdfUrls,
+                labelurl: labelUrls,
+                jurisdictions: selectedJurisdictions,
+                date: new Date().toLocaleDateString(),
+                time: new Date().toLocaleTimeString(),
+                company_name: 'N/A',
+                product_type: 'N/A'
+            })
+        });
+
+        console.log('Response Status:', response.status);
+        console.log('Response OK:', response.ok);
+
+        if (!response.ok) {
+            let errorData;
+            try {
+                const text = await response.text();
+                errorData = JSON.parse(text);
+            } catch (e) {
+                errorData = { error: `Server error: ${response.status} ${response.statusText}` };
+            }
+            console.error('Error response:', errorData);
+            throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+        }
+
+        const json = await response.json();
+        console.log('API Response:', json);
+
+        // Check if we got a requestId (async response)
+        if (json.requestId && json.status === 'pending') {
+            console.log('Got requestId, starting polling:', json.requestId);
+            // Show checking compliance spinner immediately
+            loadingState.innerHTML = '<div class="loading-spinner"></div><p>Checking compliance...</p>';
+            await pollForResults(json.requestId);
+        } else {
+            // Synchronous response with results
+            const result = json?.result || json;
+            sessionStorage.setItem("complianceResults", JSON.stringify(result));
+            window.location.href = "/results.html";
             body: formData
         });
 
