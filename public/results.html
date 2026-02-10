@@ -95,37 +95,43 @@
             const resultsSection = document.getElementById("resultsSection");
             resultsSection.innerHTML = "";
 
-            // Find the compliance data for the selected jurisdiction
-            const complianceItem = (allCompliances.compliance_check || []).find(
+            // Find ALL compliance data for the selected jurisdiction
+            const complianceItems = (allCompliances.compliance_check || []).filter(
                 item => item.jurisdiction === jurisdiction
             );
 
-            if (!complianceItem) {
+            if (complianceItems.length === 0) {
                 resultsSection.innerHTML = "<p>No data found for selected jurisdiction.</p>";
                 return;
             }
 
-            // Display header
-            displayHeader(allCompliances, complianceItem);
+            // Display header (use first item for metadata)
+            displayHeader(allCompliances, complianceItems[0]);
 
-            // Display merged product key
-            if (complianceItem.merged_product_key) {
-                const keyDiv = document.createElement("div");
-                keyDiv.style.marginBottom = "20px";
-                const capitalizedProduct = complianceItem.merged_product_key.toUpperCase();
-                keyDiv.innerHTML = `<p style="font-size: 1.3rem; font-weight: bold; color: #333;"><strong>PRODUCT:</strong> ${capitalizedProduct}</p>`;
-                resultsSection.appendChild(keyDiv);
-            }
+            // Display each product under this jurisdiction
+            complianceItems.forEach((complianceItem, productIndex) => {
+                // Display merged product key
+                if (complianceItem.merged_product_key) {
+                    const keyDiv = document.createElement("div");
+                    keyDiv.style.marginBottom = "20px";
+                    keyDiv.style.marginTop = productIndex > 0 ? "40px" : "0";
+                    keyDiv.style.paddingTop = productIndex > 0 ? "20px" : "0";
+                    keyDiv.style.borderTop = productIndex > 0 ? "2px solid #ddd" : "none";
+                    const capitalizedProduct = complianceItem.merged_product_key.toUpperCase();
+                    keyDiv.innerHTML = `<p style="font-size: 1.3rem; font-weight: bold; color: #333;"><strong>PRODUCT:</strong> ${capitalizedProduct}</p>`;
+                    resultsSection.appendChild(keyDiv);
+                }
 
-            // Display Label Review
-            if (complianceItem.label && complianceItem.label.length > 0) {
-                displayLabelReview(complianceItem.label);
-            }
+                // Display Label Review
+                if (complianceItem.label && complianceItem.label.length > 0) {
+                    displayLabelReview(complianceItem.label);
+                }
 
-            // Display COA Review
-            if (complianceItem.coa && complianceItem.coa.length > 0) {
-                displayCOAReview(complianceItem.coa);
-            }
+                // Display COA Review
+                if (complianceItem.coa && complianceItem.coa.length > 0) {
+                    displayCOAReview(complianceItem.coa);
+                }
+            });
         }
 
         function getComplianceStatus(compliantValue) {
