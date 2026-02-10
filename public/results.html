@@ -9,7 +9,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-docx-js/0.3.1/html-docx.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.min.js"></script>
 </head>
 
 <body>
@@ -31,11 +32,8 @@
             <!-- Results Section -->
             <div id="resultsSection"></div>
 
-            <!-- Action Buttons -->
-            <div class="results-button-container">
-                <button id="downloadButton" class="results-download-button">DOWNLOAD OUTPUT</button>
-                <button id="backButton" class="results-back-button">BACK TO UPLOAD</button>
-            </div>
+            <!-- Download Button -->
+            <button id="downloadButton" class="results-download-button">DOWNLOAD</button>
         </div>
     </div>
 
@@ -346,11 +344,6 @@
             resultsSection.appendChild(coaDiv);
         }
 
-        document.getElementById("backButton").addEventListener("click", () => {
-            sessionStorage.removeItem("complianceResults");
-            window.location.href = "/";
-        });
-
         document.getElementById("downloadButton").addEventListener("click", async () => {
             const resultsSection = document.getElementById("resultsSection");
             const downloadButton = document.getElementById("downloadButton");
@@ -360,21 +353,43 @@
             downloadButton.textContent = "GENERATING WORD DOC...";
 
             try {
-                const html = resultsSection.innerHTML;
-                const converted = HtmlDocxJs.convert({
-                    html: html,
-                    options: {
-                        margins: {
-                            top: 720,
-                            bottom: 720,
-                            left: 720,
-                            right: 720
-                        }
-                    }
+                const htmlContent = resultsSection.innerText || resultsSection.textContent;
+                const contentLines = htmlContent.split('\n').filter(line => line.trim());
+                
+                const { Document, Packer, Paragraph, AlignmentType, convertInchesToTwip } = window.docx;
+                
+                const paragraphs = contentLines.map(line => {
+                    return new Paragraph({
+                        text: line.trim(),
+                        spacing: { after: 100 }
+                    });
                 });
-
+                
+                const doc = new Document({
+                    sections: [{
+                        properties: {
+                            margin: {
+                                top: convertInchesToTwip(1),
+                                bottom: convertInchesToTwip(1),
+                                left: convertInchesToTwip(1),
+                                right: convertInchesToTwip(1)
+                            }
+                        },
+                        children: paragraphs
+                    }]
+                });
+                
                 const timestamp = new Date().toISOString().split('T')[0];
-                converted.save(`compliance-report-${timestamp}.docx`);
+                Packer.toBlob(doc).then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `compliance-report-${timestamp}.docx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                });
             } catch (error) {
                 console.error('Error generating Word document:', error);
                 alert('Error generating Word document. Please try again.');

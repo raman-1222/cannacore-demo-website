@@ -553,43 +553,17 @@ main {
     font-size: 1rem;
 }
 
-.results-back-button {
+.results-download-button {
     display: block;
-    width: 100%;
-    max-width: 300px;
+    width: auto;
+    max-width: 200px;
     margin: 40px auto 0;
-    padding: 15px 30px;
+    padding: 10px 24px;
     background: #000000;
     color: #ffffff;
     border: none;
     border-radius: 4px;
-    font-size: 1rem;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    cursor: pointer;
-    transition: background 0.3s ease;
-}
-
-.results-back-button:hover {
-    background: #333333;
-}
-
-.results-button-container {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    margin: 40px auto 0;
-    max-width: 650px;
-}
-
-.results-download-button {
-    flex: 1;
-    padding: 15px 30px;
-    background: #007bff;
-    color: #ffffff;
-    border: none;
-    border-radius: 4px;
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
     letter-spacing: 0.5px;
     cursor: pointer;
@@ -597,7 +571,12 @@ main {
 }
 
 .results-download-button:hover {
-    background: #0056b3;
+    background: #333333;
+}
+
+.results-download-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
 }
 
 /* Jurisdiction Selector Styles */
