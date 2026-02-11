@@ -565,8 +565,19 @@ async function pollForResults(requestId) {
                 loadingState.style.display = "none";
                 window.location.href = "/results.html";
                 return;
-            } else if (resultData.status === 'failed' || resultData.error) {
-                throw new Error(resultData.error || 'Workflow failed');
+            } else if (resultData.status === 'failed') {
+                // Workflow failed - display error to user
+                const errorMessage = resultData.error || 'Compliance check failed. Please try again.';
+                console.error(`Workflow failed: ${errorMessage}`);
+                loadingState.style.display = "none";
+                showError(`❌ ${errorMessage}`);
+                throw new Error(errorMessage);
+            } else if (resultData.error) {
+                // Other error occurred
+                console.error(`Error received: ${resultData.error}`);
+                loadingState.style.display = "none";
+                showError(`❌ ${resultData.error}`);
+                throw new Error(resultData.error);
             }
             // Still processing, continue polling
             console.log(`Status: ${resultData.status}, continuing...`);

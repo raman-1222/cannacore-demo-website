@@ -341,6 +341,16 @@ app.get('/api/results/:requestId', async (req, res) => {
 
     if (pollResponse.status === 200 && pollResult) {
       // Lamatic returns the result directly from checkStatus
+      // Check if request failed
+      if (pollResult.status === 'failed') {
+        const errorMsg = pollResult.data?.output?.result?.errorMsg || 'Unknown error from Lamatic workflow';
+        console.error(`Lamatic Workflow Failed: ${errorMsg}`);
+        return res.status(400).json({
+          success: false,
+          status: 'failed',
+          error: `Compliance check failed: ${errorMsg}`
+        });
+      }
       // Check if this is a success response
       if (pollResult.success && pollResult.status === 'success') {
         // Extract the actual result from nested structure
