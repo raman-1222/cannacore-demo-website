@@ -492,7 +492,7 @@ uploadForm.addEventListener('submit', async e => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 imageurl: imageUrls,
-                coaurl: coaUrls.length > 0 ? coaUrls : ["https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884"],
+                coaurl: coaUrls.length > 0 ? coaUrls : ["not provided"],
                 jurisdictions: selectedJurisdictions,
                 date: new Date().toLocaleDateString(),
                 time: new Date().toLocaleTimeString(),
