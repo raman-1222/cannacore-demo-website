@@ -234,7 +234,7 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
         workflowId: workflowId,
         imageurl: imageUrls,
         jurisdictions: jurisdictions,
-        coaurl: pdfUrls.length > 0 ? pdfUrls : ["https://cdn.shopify.com/s/files/1/0665/8188/9159/files/Blueberry_-_Mega_Smasher_s.pdf?v=1764824884"],
+        coaurl: pdfUrls.length > 0 ? pdfUrls : ["not provided"],
         labelurl: allImageUrls,
         date: dateStr,
         time: timeStr,
@@ -576,7 +576,7 @@ app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, r
 
     let jurisdictionsArray = Array.isArray(jurisdictions) ? jurisdictions : [jurisdictions];
     let imageUrlArray = Array.isArray(imageurl) ? imageurl : [imageurl];
-    let coaUrlArray = coaurl ? (Array.isArray(coaurl) ? coaurl : [coaurl]) : [];
+    let coaUrlArray = coaurl ? (Array.isArray(coaurl) ? coaurl : [coaurl]) : ["not provided"];
 
     console.log('=== LAMATIC API CALL ===');
     console.log('Image URLs:', imageUrlArray);
