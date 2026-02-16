@@ -45,22 +45,32 @@ const apiLimiter = rateLimit({
 });
 
 // Middleware
-app.use(cors({
-  origin: '*',
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow all origins including custom domains
+    callback(null, true);
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-upload-id', 'x-chunk-index', 'x-total-chunks', 'x-file-name', 'x-file-type'],
-  credentials: true
-}));
+  credentials: false,
+  maxAge: 86400
+};
 
-// Skip JSON parsing for chunk upload endpoint - it needs raw binary data
-app.use((req, res, next) => {
-  if (req.path === '/api/upload-chunk') {
-    express.raw({ type: '*/*', limit: '10mb' })(req, res, next);
-  } else {
-    express.json()(req, res, next);
-  }
+app.use(cors(corsOptions));
+
+// Handle preflight OPTIONS requests for all routes
+app.options('*', cors(corsOptions));
+
+// Add explicit OPTIONS handler for upload-chunk
+app.options('/api/upload-chunk', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, x-upload-id, x-chunk-index, x-total-chunks, x-file-name, x-file-type');
+  res.status(200).send('OK');
 });
 
+// Parse JSON for other routes
+app.use(express.json());
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Configure multer for file uploads
@@ -496,8 +506,8 @@ app.get('/api/results/:requestId', async (req, res) => {
 
 // **CHUNKED FILE UPLOAD ENDPOINTS**
 
-// Upload a single file chunk - raw binary data
-app.post('/api/upload-chunk', (req, res) => {
+// Upload a single file chunk - raw binary data with explicit middleware
+app.post('/api/upload-chunk', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
   try {
     const uploadId = req.headers['x-upload-id'];
     const chunkIndex = parseInt(req.headers['x-chunk-index']);
@@ -505,16 +515,20 @@ app.post('/api/upload-chunk', (req, res) => {
     const fileName = req.headers['x-file-name'];
     const fileType = req.headers['x-file-type'];
     
+    console.log(`[CHUNK UPLOAD] Headers received:`, { uploadId, chunkIndex, totalChunks, fileName, fileType });
+    
     if (!uploadId || chunkIndex === undefined || !totalChunks || !fileName) {
+      console.error('[CHUNK UPLOAD] Missing required parameters');
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
     const chunk = req.body;
     if (!chunk || chunk.length === 0) {
+      console.error('[CHUNK UPLOAD] No chunk data provided');
       return res.status(400).json({ error: 'No chunk data provided' });
     }
 
-    console.log(`Received chunk ${chunkIndex}/${totalChunks} for upload ${uploadId}, size: ${chunk.length} bytes`);
+    console.log(`[CHUNK UPLOAD] Received chunk ${chunkIndex}/${totalChunks} for upload ${uploadId}, size: ${chunk.length} bytes`);
 
     // Initialize storage for this upload if needed
     if (!chunkStorage.has(uploadId)) {
@@ -529,13 +543,13 @@ app.post('/api/upload-chunk', (req, res) => {
     
     // Store this chunk
     if (uploadData.chunks[chunkIndex] !== null) {
-      return res.status(400).json({ error: `Chunk ${chunkIndex} already uploaded` });
+      console.warn(`[CHUNK UPLOAD] Chunk ${chunkIndex} already uploaded, replacing`);
     }
 
     uploadData.chunks[chunkIndex] = chunk;
     uploadData.metadata.receivedChunks++;
 
-    console.log(`Stored chunk ${chunkIndex}. Progress: ${uploadData.metadata.receivedChunks}/${totalChunks}`);
+    console.log(`[CHUNK UPLOAD] Stored chunk ${chunkIndex}. Progress: ${uploadData.metadata.receivedChunks}/${totalChunks}`);
 
     res.json({
       success: true,
@@ -547,7 +561,7 @@ app.post('/api/upload-chunk', (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error uploading chunk:', error);
+    console.error('[CHUNK UPLOAD] Error:', error);
     res.status(500).json({ error: error.message || 'Failed to upload chunk' });
   }
 });
