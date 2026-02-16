@@ -45,8 +45,22 @@ const apiLimiter = rateLimit({
 });
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-upload-id', 'x-chunk-index', 'x-total-chunks', 'x-file-name', 'x-file-type'],
+  credentials: true
+}));
+
+// Skip JSON parsing for chunk upload endpoint - it needs raw binary data
+app.use((req, res, next) => {
+  if (req.path === '/api/upload-chunk') {
+    express.raw({ type: '*/*', limit: '10mb' })(req, res, next);
+  } else {
+    express.json()(req, res, next);
+  }
+});
+
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Configure multer for file uploads
@@ -482,8 +496,8 @@ app.get('/api/results/:requestId', async (req, res) => {
 
 // **CHUNKED FILE UPLOAD ENDPOINTS**
 
-// Upload a single file chunk - use raw middleware to minimize overhead
-app.post('/api/upload-chunk', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+// Upload a single file chunk - raw binary data
+app.post('/api/upload-chunk', (req, res) => {
   try {
     const uploadId = req.headers['x-upload-id'];
     const chunkIndex = parseInt(req.headers['x-chunk-index']);
