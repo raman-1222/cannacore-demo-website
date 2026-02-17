@@ -291,9 +291,9 @@
             // Calculate overall compliance status
             const overallStatus = calculateOverallComplianceStatus(complianceItem);
 
-            // Build output section if available
-            const outputSection = allCompliances.output
-                ? `<p style="font-size: 0.95rem; margin-bottom: 20px; line-height: 1.6; color: #555; word-wrap: break-word; overflow-wrap: break-word; white-space: normal;">${allCompliances.output}</p>`
+            // Build output section if available (only display if it's a string, not an object)
+            const outputSection = (allCompliances.output && typeof allCompliances.output === 'string')
+                ? `<p style="font-size: 0.95rem; margin-bottom: 20px; line-height: 1.6; color: #555; word-wrap: break-word; overflow-wrap: break-word; white-space: normal;">${escapeHtml(allCompliances.output)}</p>`
                 : '';
 
             headerDiv.innerHTML = `
