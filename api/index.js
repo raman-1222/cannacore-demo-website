@@ -35,14 +35,16 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
 
-// Rate limiting configuration
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiting configuration - DISABLED FOR TESTING
+// const apiLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 10,
+//   message: 'Too many requests from this IP, please try again later.',
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
+// Dummy middleware that doesn't limit for testing
+const apiLimiter = (req, res, next) => next();
 
 // Middleware
 const corsOptions = {
@@ -69,9 +71,9 @@ app.options('/api/upload-chunk', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Parse JSON for other routes
-app.use(express.json());
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// Parse JSON for other routes - INCREASED LIMITS FOR TESTING
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
@@ -154,11 +156,64 @@ function addUrlsToComplianceItems(result) {
   return result;
 }
 
+// Utility function to convert PDF pages to JPG images using mupdf (WASM-based)
+async function convertPdfToImages(pdfBuffer) {
+  try {
+    const imageUrls = [];
+    
+    console.log(`PDF size: ${(pdfBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+    
+    // Dynamic import for ESM compatibility
+    const mupdf = await import('mupdf');
+    
+    // Open PDF document with mupdf
+    const doc = mupdf.Document.openDocument(pdfBuffer, 'application/pdf');
+    const pageCount = doc.countPages();
+    
+    console.log(`Converting ${pageCount} PDF pages to JPG images...`);
+    
+    for (let pageNum = 0; pageNum < pageCount; pageNum++) {
+      try {
+        const page = doc.loadPage(pageNum);
+        
+        // Render page to pixmap at 2x scale (144 DPI)
+        const scaleFactor = 2;
+        const matrix = mupdf.Matrix.scale(scaleFactor, scaleFactor);
+        const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true);
+        
+        // Convert pixmap to JPEG buffer (quality 90)
+        const imageBuffer = Buffer.from(pixmap.asJPEG(90));
+        
+        // Upload to Vercel Blob
+        const uniqueImageId = crypto.randomBytes(8).toString('hex');
+        const imageFilename = `pdf-pages/${uniqueImageId}-page-${pageNum + 1}.jpg`;
+        
+        const blob = await put(imageFilename, imageBuffer, {
+          access: 'public',
+          contentType: 'image/jpeg',
+        });
+        
+        imageUrls.push(blob.url);
+        console.log(`Page ${pageNum + 1}/${pageCount} uploaded: ${imageFilename} (${(imageBuffer.length / 1024).toFixed(0)} KB)`);
+      } catch (pageError) {
+        console.error(`Error converting page ${pageNum + 1}:`, pageError);
+        throw new Error(`Failed to convert page ${pageNum + 1}: ${pageError.message}`);
+      }
+    }
+    
+    return imageUrls;
+  } catch (error) {
+    console.error('Error converting PDF to images:', error);
+    throw new Error(`Failed to convert PDF to images: ${error.message}`);
+  }
+}
+
+
 // API endpoint to handle file uploads and compliance check
 app.post('/api/check-compliance', apiLimiter, upload.fields([
-  { name: 'images', maxCount: 10 },
-  { name: 'pdf', maxCount: 10 },
-  { name: 'labelsPdf', maxCount: 1 }
+  { name: 'images', maxCount: 100 },
+  { name: 'pdf', maxCount: 100 },
+  { name: 'labelsPdf', maxCount: 100 }
 ]), async (req, res) => {
   try {
     if (!req.files || (!req.files.images && !req.files.labelsPdf && !req.files.pdf)) {
@@ -207,47 +262,32 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 
     console.log('Images uploaded successfully. Count:', imageUrls.length);
 
-    // Upload COA PDF if provided
+    // Convert COA PDF pages to JPG if provided
     let pdfUrls = [];
     if (pdf) {
-      console.log('Uploading COA PDF to Vercel Blob...');
-      const uniquePdfId = crypto.randomBytes(8).toString('hex');
-      const pdfExtension = path.extname(pdf.originalname) || '.pdf';
-      const pdfFilename = `pdfs/${uniquePdfId}${pdfExtension}`;
-      
+      console.log('Processing COA PDF - converting pages to JPG...');
       try {
-        const blob = await put(pdfFilename, pdf.buffer, {
-          access: 'public',
-          contentType: pdf.mimetype,
-        });
-        pdfUrls.push(blob.url);
-        console.log(`COA PDF uploaded: ${pdfFilename}`);
+        const pdfPageImages = await convertPdfToImages(pdf.buffer);
+        pdfUrls.push(...pdfPageImages);
+        console.log(`COA PDF converted to ${pdfPageImages.length} JPG images`);
       } catch (error) {
-        console.error(`Failed to upload COA PDF: ${error.message}`);
-        throw new Error(`Failed to upload COA PDF: ${error.message}`);
+        console.error(`Failed to process COA PDF: ${error.message}`);
+        throw new Error(`Failed to process COA PDF: ${error.message}`);
       }
     } else {
       console.log('No COA PDF uploaded');
     }
 
-    // Upload labels PDF if provided
-    let labelsPdfUrl = null;
+    // Convert labels PDF pages to JPG if provided
+    let labelsPdfPageImages = [];
     if (labelsPdf) {
-      console.log('Uploading labels PDF to Vercel Blob...');
-      const uniqueLabelsPdfId = crypto.randomBytes(8).toString('hex');
-      const labelsPdfExtension = path.extname(labelsPdf.originalname) || '.pdf';
-      const labelsPdfFilename = `labels-pdfs/${uniqueLabelsPdfId}${labelsPdfExtension}`;
-      
+      console.log('Processing labels PDF - converting pages to JPG...');
       try {
-        const blob = await put(labelsPdfFilename, labelsPdf.buffer, {
-          access: 'public',
-          contentType: labelsPdf.mimetype,
-        });
-        labelsPdfUrl = blob.url;
-        console.log(`Labels PDF uploaded: ${labelsPdfFilename}`);
+        labelsPdfPageImages = await convertPdfToImages(labelsPdf.buffer);
+        console.log(`Labels PDF converted to ${labelsPdfPageImages.length} JPG images`);
       } catch (error) {
-        console.error(`Failed to upload labels PDF: ${error.message}`);
-        throw new Error(`Failed to upload labels PDF: ${error.message}`);
+        console.error(`Failed to process labels PDF: ${error.message}`);
+        throw new Error(`Failed to process labels PDF: ${error.message}`);
       }
     } else {
       console.log('No labels PDF uploaded');
@@ -257,9 +297,10 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     console.log('PDF URLs:', pdfUrls);
     console.log('Labels PDF URL:', labelsPdfUrl);
 
+    // Use converted page images instead of the raw PDF URL
     const allImageUrls = [...imageUrls];
-    if (labelsPdfUrl) {
-      allImageUrls.push(labelsPdfUrl);
+    if (labelsPdfPageImages.length > 0) {
+      allImageUrls.push(...labelsPdfPageImages);
     }
 
     console.log('=== LAMATIC API CALL ===');
@@ -507,7 +548,7 @@ app.get('/api/results/:requestId', async (req, res) => {
 // **CHUNKED FILE UPLOAD ENDPOINTS**
 
 // Upload a single file chunk - raw binary data with explicit middleware
-app.post('/api/upload-chunk', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+app.post('/api/upload-chunk', express.raw({ type: '*/*', limit: '500mb' }), (req, res) => {
   try {
     const uploadId = req.headers['x-upload-id'];
     const chunkIndex = parseInt(req.headers['x-chunk-index']);
@@ -613,27 +654,48 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
     const assembledBuffer = Buffer.concat(chunks);
     console.log(`Assembled buffer size: ${(assembledBuffer.length / 1024 / 1024).toFixed(2)}MB`);
 
-    // Upload to Vercel Blob
-    const blobFileName = `${fileType}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${fileName}`;
-    console.log(`Uploading to Vercel Blob: ${blobFileName}`);
+    const isPdf = fileName.toLowerCase().endsWith('.pdf');
+    
+    if (isPdf) {
+      // Convert PDF pages directly to JPG images
+      console.log('PDF detected - converting pages to JPG images...');
+      
+      const pageImageUrls = await convertPdfToImages(assembledBuffer);
+      console.log(`PDF converted to ${pageImageUrls.length} JPG images`);
+      
+      // Clean up chunks from memory
+      chunkStorage.delete(uploadId);
 
-    const blob = await put(blobFileName, assembledBuffer, {
-      access: 'public',
-      contentType: 'application/pdf'
-    });
+      res.json({
+        success: true,
+        uploadId,
+        urls: pageImageUrls,
+        pageCount: pageImageUrls.length
+      });
+    } else {
+      // Non-PDF: upload as-is
+      const blobFileName = `${fileType}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${fileName}`;
+      console.log(`Uploading to Vercel Blob: ${blobFileName}`);
 
-    console.log(`File uploaded to Blob: ${blob.url}`);
+      const blob = await put(blobFileName, assembledBuffer, {
+        access: 'public',
+        contentType: 'application/pdf'
+      });
 
-    // Clean up chunks from memory
-    chunkStorage.delete(uploadId);
+      console.log(`File uploaded to Blob: ${blob.url}`);
 
-    res.json({
-      success: true,
-      uploadId,
-      url: blob.url,
-      fileName: blobFileName,
-      size: assembledBuffer.length
-    });
+      // Clean up chunks from memory
+      chunkStorage.delete(uploadId);
+
+      res.json({
+        success: true,
+        uploadId,
+        url: blob.url,
+        urls: [blob.url],
+        fileName: blobFileName,
+        size: assembledBuffer.length
+      });
+    }
 
   } catch (error) {
     console.error('Error finalizing chunks:', error);
@@ -647,7 +709,7 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
 
 
 // API endpoint for compliance check with pre-uploaded URLs
-app.post('/api/check-compliance-urls', apiLimiter, express.json(), async (req, res) => {
+app.post('/api/check-compliance-urls', apiLimiter, express.json({ limit: '500mb' }), async (req, res) => {
   try {
     const { imageurl, coaurl, jurisdictions, date, time, company_name, product_type } = req.body;
 

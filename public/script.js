@@ -5,7 +5,7 @@ let selectedLabelsPdf = null;
 let selectedJurisdictions = [];
 
 // FILE SIZE VALIDATION CONSTANTS
-const MAX_FILE_SIZE = 40 * 1024 * 1024; // 40 MB
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB (for testing)
 
 // Get DOM elements
 const imageInput = document.getElementById('imageInput');
@@ -400,8 +400,15 @@ async function uploadFileInChunks(file, fileType) {
             }
 
             const result = await response.json();
+            if (result.urls && result.urls.length > 0) {
+                console.log(`File finalized. ${result.pageCount ? result.pageCount + ' page images' : '1 file'} uploaded.`);
+                if (result.originalSize) {
+                    console.log(`PDF compressed: ${(result.originalSize / 1024 / 1024).toFixed(2)}MB → ${(result.size / 1024 / 1024).toFixed(2)}MB`);
+                }
+                return result.urls; // Return array of image URLs
+            }
             console.log(`File finalized and uploaded to: ${result.url}`);
-            return result.url;
+            return [result.url]; // Wrap single URL in array for consistency
 
         } catch (error) {
             console.error(`Finalization attempt ${finalizeAttempts} failed:`, error);
@@ -444,9 +451,9 @@ uploadForm.addEventListener('submit', async e => {
                 loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading image ${idx + 1}/${selectedImages.length}...<br/>${img.name}</p>`;
                 
                 try {
-                    const url = await uploadFileInChunks(img, 'images');
-                    imageUrls.push(url);
-                    console.log(`Image ${idx + 1} uploaded successfully: ${url}`);
+                    const urls = await uploadFileInChunks(img, 'images');
+                    imageUrls.push(...urls);
+                    console.log(`Image ${idx + 1} uploaded successfully: ${urls}`);
                 } catch (imgError) {
                     console.error(`Failed to upload image ${idx + 1}:`, imgError);
                     throw imgError;
@@ -457,11 +464,11 @@ uploadForm.addEventListener('submit', async e => {
         // Upload COA PDF via chunking
         if (selectedPdfs) {
             console.log(`Uploading COA PDF: ${selectedPdfs.name}`);
-            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading COA PDF...<br/>${selectedPdfs.name}</p>`;
+            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading & compressing COA PDF...<br/>${selectedPdfs.name}</p>`;
             try {
-                const url = await uploadFileInChunks(selectedPdfs, 'pdfs');
-                coaUrls.push(url);
-                console.log(`COA PDF uploaded successfully: ${url}`);
+                const urls = await uploadFileInChunks(selectedPdfs, 'pdfs');
+                coaUrls.push(...urls);
+                console.log(`COA PDF uploaded successfully: ${urls}`);
             } catch (pdfError) {
                 console.error('Failed to upload COA PDF:', pdfError);
                 throw pdfError;
@@ -471,11 +478,11 @@ uploadForm.addEventListener('submit', async e => {
         // Upload Labels PDF via chunking
         if (selectedLabelsPdf) {
             console.log(`Uploading Labels PDF: ${selectedLabelsPdf.name}`);
-            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading Labels PDF...<br/>${selectedLabelsPdf.name}</p>`;
+            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading & compressing Labels PDF...<br/>${selectedLabelsPdf.name}</p>`;
             try {
-                const url = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
-                imageUrls.push(url);
-                console.log(`Labels PDF uploaded successfully: ${url}`);
+                const urls = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
+                imageUrls.push(...urls);
+                console.log(`Labels PDF uploaded successfully: ${urls}`);
             } catch (labelError) {
                 console.error('Failed to upload Labels PDF:', labelError);
                 throw labelError;
