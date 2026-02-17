@@ -722,27 +722,64 @@ app.post('/api/finalize-chunks', express.json(), async (req, res) => {
     const assembledBuffer = Buffer.concat(chunks);
     console.log(`Assembled buffer size: ${(assembledBuffer.length / 1024 / 1024).toFixed(2)}MB`);
 
-    // Upload to Vercel Blob
-    const blobFileName = `${fileType}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${fileName}`;
-    console.log(`Uploading to Vercel Blob: ${blobFileName}`);
+    const isPdf = fileName.toLowerCase().endsWith('.pdf');
+    
+    if (isPdf) {
+      // Compress PDF and convert pages to images
+      console.log('PDF detected - compressing and converting to page images...');
+      
+      // Step 1: Compress PDF
+      const compressedBuffer = await compressPdf(assembledBuffer);
+      
+      // Step 2: Convert each page to an image and upload
+      const pageImageUrls = await convertPdfToImages(compressedBuffer);
+      console.log(`PDF converted to ${pageImageUrls.length} page images`);
+      
+      // Also upload the compressed PDF for reference
+      const blobFileName = `${fileType}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${fileName}`;
+      const pdfBlob = await put(blobFileName, compressedBuffer, {
+        access: 'public',
+        contentType: 'application/pdf'
+      });
+      console.log(`Compressed PDF also uploaded: ${pdfBlob.url}`);
+      
+      // Clean up chunks from memory
+      chunkStorage.delete(uploadId);
 
-    const blob = await put(blobFileName, assembledBuffer, {
-      access: 'public',
-      contentType: 'application/pdf'
-    });
+      res.json({
+        success: true,
+        uploadId,
+        urls: pageImageUrls,
+        pdfUrl: pdfBlob.url,
+        fileName: blobFileName,
+        size: compressedBuffer.length,
+        originalSize: assembledBuffer.length,
+        pageCount: pageImageUrls.length
+      });
+    } else {
+      // Non-PDF: upload as-is
+      const blobFileName = `${fileType}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${fileName}`;
+      console.log(`Uploading to Vercel Blob: ${blobFileName}`);
 
-    console.log(`File uploaded to Blob: ${blob.url}`);
+      const blob = await put(blobFileName, assembledBuffer, {
+        access: 'public',
+        contentType: 'application/pdf'
+      });
 
-    // Clean up chunks from memory
-    chunkStorage.delete(uploadId);
+      console.log(`File uploaded to Blob: ${blob.url}`);
 
-    res.json({
-      success: true,
-      uploadId,
-      url: blob.url,
-      fileName: blobFileName,
-      size: assembledBuffer.length
-    });
+      // Clean up chunks from memory
+      chunkStorage.delete(uploadId);
+
+      res.json({
+        success: true,
+        uploadId,
+        url: blob.url,
+        urls: [blob.url],
+        fileName: blobFileName,
+        size: assembledBuffer.length
+      });
+    }
 
   } catch (error) {
     console.error('Error finalizing chunks:', error);
