@@ -181,13 +181,19 @@ async function convertPdfToImages(pdfBuffer) {
   try {
     const imageUrls = [];
     
-    // Dynamically import pdfjs to avoid ESM/CommonJS issues
-    const pdfjs = await import('pdfjs-dist');
+    // Polyfill DOMMatrix for Node.js (required by pdfjs-dist)
+    if (typeof globalThis.DOMMatrix === 'undefined') {
+      const { DOMMatrix } = require('canvas');
+      globalThis.DOMMatrix = DOMMatrix;
+    }
     
-    // Set up PDF.js worker
-    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+    // Use legacy build for Node.js environments
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     
-    const pdf = await pdfjs.getDocument({ data: pdfBuffer }).promise;
+    // Disable worker for Node.js
+    pdfjs.GlobalWorkerOptions.workerSrc = '';
+    
+    const pdf = await pdfjs.getDocument({ data: pdfBuffer, useSystemFonts: true }).promise;
     const pageCount = pdf.numPages;
     
     console.log(`Converting ${pageCount} PDF pages to images...`);
@@ -225,7 +231,7 @@ async function convertPdfToImages(pdfBuffer) {
         });
         
         imageUrls.push(blob.url);
-        console.log(`Page ${pageNum} uploaded: ${imageFilename}`);
+        console.log(`Page ${pageNum}/${pageCount} uploaded: ${imageFilename} (${(imageBuffer.length / 1024).toFixed(0)} KB)`);
       } catch (pageError) {
         console.error(`Error converting page ${pageNum}:`, pageError);
         throw new Error(`Failed to convert page ${pageNum}: ${pageError.message}`);
