@@ -16,6 +16,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.93",
     "@vercel/blob": "^0.23.4",
     "axios": "^1.6.2",
     "canvas": "^3.2.1",

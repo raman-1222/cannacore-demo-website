@@ -193,7 +193,10 @@ async function convertPdfToImages(pdfBuffer) {
     // Disable worker for Node.js
     pdfjs.GlobalWorkerOptions.workerSrc = '';
     
-    const pdf = await pdfjs.getDocument({ data: pdfBuffer, useSystemFonts: true }).promise;
+    // Convert Buffer to Uint8Array as required by pdfjs-dist
+    const pdfData = new Uint8Array(pdfBuffer);
+    
+    const pdf = await pdfjs.getDocument({ data: pdfData, useSystemFonts: true }).promise;
     const pageCount = pdf.numPages;
     
     console.log(`Converting ${pageCount} PDF pages to images...`);
