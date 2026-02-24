@@ -17,6 +17,31 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Supabase bucket name
+const BUCKET_NAME = 'cannacore';
+
+// Utility function to delete file from Supabase bucket
+async function deleteFileFromSupabase(fileName) {
+  try {
+    const { error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .remove([fileName]);
+
+    if (error) {
+      throw new Error(`Delete failed: ${error.message}`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`[SUPABASE] Delete error for ${fileName}:`, error.message);
+    return false;
+  }
+}
+
+// Track uploaded files by requestId for cleanup
+const uploadedFilesMap = new Map();
+const FILES_CLEANUP_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
+
 // Convert PDF pages to images using mupdf
 async function convertPdfToImages(pdfBuffer) {
   try {
@@ -386,6 +411,26 @@ app.post('/api/check-compliance-urls', apiLimiter, async (req, res) => {
       });
     }
 
+    // Store uploaded file paths for cleanup after results are received
+    // Extract Supabase storage paths from public URLs
+    const extractFilePath = (url) => {
+      if (!url) return null;
+      const match = url.match(/\/cannacore\/(.+)$/);
+      return match ? match[1] : null;
+    };
+
+    const imageFilePaths = (imageurl || []).map(extractFilePath).filter(Boolean);
+    const coaFilePaths = (Array.isArray(coaurl) ? coaurl : (coaurl ? [coaurl] : [])).map(extractFilePath).filter(Boolean);
+
+    if (imageFilePaths.length > 0 || coaFilePaths.length > 0) {
+      uploadedFilesMap.set(requestId, {
+        imageFilePaths,
+        coaFilePaths,
+        createdAt: Date.now()
+      });
+      console.log(`[UPLOAD TRACKING] Stored ${imageFilePaths.length} image paths and ${coaFilePaths.length} COA paths for requestId: ${requestId}`);
+    }
+
     // Return immediately with requestId - client will poll for results
     res.json({
       success: true,
@@ -428,8 +473,8 @@ app.get('/api/results/:requestId', async (req, res) => {
     }
 
     const query = `
-      query checkStatus($request_id: String!) {
-        checkStatus(request_id: $request_id)
+      query CheckStatus($request_id: String!) {
+        checkStatus(requestId: $request_id)
       }`;
 
     const variables = {
@@ -486,12 +531,52 @@ app.get('/api/results/:requestId', async (req, res) => {
                       checkStatusResult?.status === 'error';
 
     if (isComplete) {
+        // Extract the actual compliance result from the nested Lamatic response
+        // checkStatusResult structure: { data: { output: { result: { compliance_check, ... } } }, status }
+        const actualResult = checkStatusResult?.data?.output?.result || 
+                             checkStatusResult?.output?.result ||
+                             checkStatusResult?.data?.output ||
+                             checkStatusResult;
+
+        console.log('Extracted actualResult keys:', Object.keys(actualResult || {}));
+
+        // Delete uploaded files from Supabase after processing
+        setImmediate(async () => {
+          try {
+            const uploadedData = uploadedFilesMap.get(requestId);
+            if (uploadedData) {
+              const filePaths = [
+                ...uploadedData.imageFilePaths,
+                ...uploadedData.coaFilePaths
+              ].filter(path => path);
+              
+              if (filePaths.length > 0) {
+                console.log(`[CLEANUP] Deleting ${filePaths.length} files for requestId ${requestId}...`);
+                
+                for (const filePath of filePaths) {
+                  try {
+                    await deleteFileFromSupabase(filePath);
+                    console.log(`[CLEANUP] Deleted: ${filePath}`);
+                  } catch (err) {
+                    console.error(`[CLEANUP] Failed to delete ${filePath}:`, err.message);
+                  }
+                }
+                
+                uploadedFilesMap.delete(requestId);
+                console.log('[CLEANUP] Done');
+              }
+            }
+          } catch (cleanupErr) {
+            console.error('[CLEANUP] Error:', cleanupErr.message);
+          }
+        });
+
       return res.json({
         success: true,
         status: 'success',
         data: {
           output: {
-            result: checkStatusResult
+            result: actualResult
           }
         }
       });
@@ -792,6 +877,17 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+// Clean up old entries from uploadedFilesMap periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [requestId, data] of uploadedFilesMap.entries()) {
+    if (now - data.createdAt > FILES_CLEANUP_TIMEOUT) {
+      console.log(`[CLEANUP] Removing stale entry from map: ${requestId}`);
+      uploadedFilesMap.delete(requestId);
+    }
+  }
+}, 60 * 60 * 1000); // Check every hour
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
