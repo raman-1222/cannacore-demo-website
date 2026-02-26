@@ -12,6 +12,9 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy for Vercel/reverse proxies (required for express-rate-limit)
+app.set('trust proxy', 1);
+
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
