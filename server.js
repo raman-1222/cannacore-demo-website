@@ -896,6 +896,76 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Generate signed upload URL for direct browser-to-Supabase uploads
+app.post('/api/get-upload-url', async (req, res) => {
+  try {
+    const { fileName, fileType } = req.body;
+
+    if (!fileName || !fileType) {
+      return res.status(400).json({ error: 'Missing fileName or fileType' });
+    }
+
+    const uniqueId = crypto.randomUUID();
+    let storagePath;
+    if (fileType === 'images') {
+      storagePath = `images/${uniqueId}-${fileName}`;
+    } else if (fileType === 'pdfs') {
+      storagePath = `pdfs/${uniqueId}-${fileName}`;
+    } else if (fileType === 'labels-pdfs') {
+      storagePath = `labels-pdfs/${uniqueId}-${fileName}`;
+    } else {
+      return res.status(400).json({ error: 'Invalid fileType' });
+    }
+
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUploadUrl(storagePath);
+
+    if (error) {
+      console.error('[SIGNED URL] Error:', error.message);
+      return res.status(500).json({ error: `Failed to create upload URL: ${error.message}` });
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(storagePath);
+
+    console.log(`[SIGNED URL] Created for ${fileType}: ${storagePath}`);
+
+    res.json({
+      success: true,
+      signedUrl: data.signedUrl,
+      token: data.token,
+      path: storagePath,
+      publicUrl: publicUrlData.publicUrl
+    });
+  } catch (error) {
+    console.error('[SIGNED URL] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Convert PDF to images (receives raw PDF, converts with mupdf, uploads images to Supabase)
+app.post('/api/convert-pdf-to-images', express.raw({ type: 'application/pdf', limit: '50mb' }), async (req, res) => {
+  try {
+    if (!req.body || req.body.length === 0) {
+      return res.status(400).json({ error: 'No PDF data received' });
+    }
+
+    const pdfBuffer = req.body;
+    console.log(`[CONVERT] Received PDF: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
+
+    // Convert PDF to images using mupdf and upload to Supabase
+    const imageUrls = await convertPdfToImages(pdfBuffer);
+    console.log(`[CONVERT] Converted ${imageUrls.length} pages`);
+
+    res.json({ success: true, urls: imageUrls, pageCount: imageUrls.length });
+  } catch (error) {
+    console.error('[CONVERT] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Clean up old entries from uploadedFilesMap periodically
 setInterval(() => {
   const now = Date.now();
@@ -907,6 +977,11 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000); // Check every hour
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+// Only listen when running locally (not on Vercel)
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

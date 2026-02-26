@@ -269,158 +269,44 @@ function updateSubmitButton() {
     submitBtn.disabled = !(selectedImages.length > 0 || selectedPdfs || selectedLabelsPdf) || selectedJurisdictions.length === 0;
 }
 
-// **CHUNKED FILE UPLOAD UTILITY**
-const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (safe margin for Vercel 6MB limit)
+// **DIRECT FILE UPLOAD VIA SIGNED URL**
+// Uploads files directly from browser to Supabase (bypasses Vercel serverless limits)
+async function uploadFileDirect(file, fileType) {
+    console.log(`Starting direct upload: ${file.name} (${formatFileSize(file.size)}) as ${fileType}`);
+    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Preparing upload for ${file.name}...</p>`;
 
-async function uploadFileInChunks(file, fileType) {
-    const uploadId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    let uploadedBytes = 0;
+    // Get signed URL from server
+    const urlRes = await fetch('/api/get-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, fileType: fileType })
+    });
 
-    console.log(`Starting chunked upload: ${file.name}, ${totalChunks} chunks, ${CHUNK_SIZE / 1024 / 1024}MB per chunk`);
-
-    for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice(start, end);
-
-        console.log(`Uploading chunk ${i + 1}/${totalChunks}: ${start} - ${end} bytes`);
-        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...<br/>${formatFileSize(end)} / ${formatFileSize(file.size)}</p>`;
-
-        try {
-            const response = await fetch('/api/upload-chunk', {
-                method: 'POST',
-                headers: {
-                    'x-upload-id': uploadId,
-                    'x-chunk-index': i,
-                    'x-total-chunks': totalChunks,
-                    'x-file-name': file.name,
-                    'x-file-type': fileType,
-                    'Content-Type': 'application/octet-stream'
-                },
-                body: chunk
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || `Failed to upload chunk ${i + 1}`);
-            }
-
-            const result = await response.json();
-            uploadedBytes = end;
-            console.log(`Chunk ${i + 1}/${totalChunks} uploaded successfully. Progress: ${result.progress}%`);
-
-        } catch (error) {
-            console.error(`Error uploading chunk ${i + 1}:`, error);
-            // Retry once on failure
-            console.log(`Retrying chunk ${i + 1}...`);
-            try {
-                const retryResponse = await fetch('/api/upload-chunk', {
-                    method: 'POST',
-                    headers: {
-                        'x-upload-id': uploadId,
-                        'x-chunk-index': i,
-                        'x-total-chunks': totalChunks,
-                        'x-file-name': file.name,
-                        'x-file-type': fileType,
-                        'Content-Type': 'application/octet-stream'
-                    },
-                    body: chunk
-                });
-
-                if (!retryResponse.ok) {
-                    throw new Error(`Retry also failed for chunk ${i + 1}`);
-                }
-
-                const retryResult = await retryResponse.json();
-                console.log(`Chunk ${i + 1} uploaded on retry. Progress: ${retryResult.progress}%`);
-            } catch (retryError) {
-                console.error(`Chunk ${i + 1} failed even after retry:`, retryError);
-                throw retryError;
-            }
-        }
+    if (!urlRes.ok) {
+        const err = await urlRes.json().catch(() => ({ error: 'Failed to get upload URL' }));
+        throw new Error(err.error || 'Failed to get upload URL');
     }
 
-    // Finalize the upload
-    console.log('All chunks uploaded, finalizing...');
-    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Finalizing ${file.name}...</p>`;
+    const { signedUrl, publicUrl, path } = await urlRes.json();
+    console.log(`Got signed URL for ${file.name}`);
 
-    let finalizeAttempts = 0;
-    const maxFinalizeAttempts = 3;
+    // Upload directly to Supabase
+    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...<br/>${formatFileSize(file.size)}</p>`;
 
-    while (finalizeAttempts < maxFinalizeAttempts) {
-        try {
-            finalizeAttempts++;
-            const response = await fetch('/api/finalize-chunks', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    uploadId: uploadId,
-                    fileType: fileType
-                })
-            });
+    const uploadRes = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file
+    });
 
-            if (!response.ok) {
-                const error = await response.json();
-                
-                // If some chunks are missing, retry uploading them
-                if (error.missingChunks && error.missingChunks.length > 0) {
-                    console.log('Retrying missing chunks:', error.missingChunks);
-                    
-                    for (const chunkIdx of error.missingChunks) {
-                        const start = chunkIdx * CHUNK_SIZE;
-                        const end = Math.min(start + CHUNK_SIZE, file.size);
-                        const chunkData = file.slice(start, end);
-                        
-                        console.log(`Retrying missing chunk ${chunkIdx}...`);
-                        const retryResponse = await fetch('/api/upload-chunk', {
-                            method: 'POST',
-                            headers: {
-                                'x-upload-id': uploadId,
-                                'x-chunk-index': chunkIdx,
-                                'x-total-chunks': totalChunks,
-                                'x-file-name': file.name,
-                                'x-file-type': fileType,
-                                'Content-Type': 'application/octet-stream'
-                            },
-                            body: chunkData
-                        });
-                        
-                        if (!retryResponse.ok) {
-                            throw new Error(`Failed to retry chunk ${chunkIdx}`);
-                        }
-                    }
-                    
-                    // Wait a moment before retrying finalization
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    continue; // Retry finalization
-                }
-                
-                throw new Error(error.error || 'Failed to finalize upload');
-            }
-
-            const result = await response.json();
-            if (result.urls && result.urls.length > 0) {
-                console.log(`File finalized. ${result.pageCount ? result.pageCount + ' page images' : '1 file'} uploaded.`);
-                if (result.originalSize) {
-                    console.log(`PDF compressed: ${(result.originalSize / 1024 / 1024).toFixed(2)}MB → ${(result.size / 1024 / 1024).toFixed(2)}MB`);
-                }
-                return result.urls; // Return array of image URLs
-            }
-            console.log(`File finalized and uploaded to: ${result.url}`);
-            return [result.url]; // Wrap single URL in array for consistency
-
-        } catch (error) {
-            console.error(`Finalization attempt ${finalizeAttempts} failed:`, error);
-            if (finalizeAttempts < maxFinalizeAttempts) {
-                console.log(`Retrying finalization (${finalizeAttempts}/${maxFinalizeAttempts})...`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
-            } else {
-                throw error;
-            }
-        }
+    if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => 'Upload failed');
+        console.error('Supabase upload error:', errText);
+        throw new Error(`Failed to upload ${file.name}`);
     }
 
+    console.log(`File uploaded: ${file.name} → ${publicUrl}`);
+    return { publicUrl, path };
 }
 
 // HANDLE SUBMIT
@@ -442,7 +328,7 @@ uploadForm.addEventListener('submit', async e => {
         const imageUrls = [];
         const coaUrls = [];
 
-        // Upload all images via chunking (ensures compatibility)
+        // Upload all images directly to Supabase
         if (selectedImages.length > 0) {
             console.log(`Uploading ${selectedImages.length} image(s)...`);
             for (let idx = 0; idx < selectedImages.length; idx++) {
@@ -451,9 +337,9 @@ uploadForm.addEventListener('submit', async e => {
                 loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading image ${idx + 1}/${selectedImages.length}...<br/>${img.name}</p>`;
                 
                 try {
-                    const urls = await uploadFileInChunks(img, 'images');
-                    imageUrls.push(...urls);
-                    console.log(`Image ${idx + 1} uploaded successfully: ${urls}`);
+                    const { publicUrl } = await uploadFileDirect(img, 'images');
+                    imageUrls.push(publicUrl);
+                    console.log(`Image ${idx + 1} uploaded successfully: ${publicUrl}`);
                 } catch (imgError) {
                     console.error(`Failed to upload image ${idx + 1}:`, imgError);
                     throw imgError;
@@ -461,30 +347,42 @@ uploadForm.addEventListener('submit', async e => {
             }
         }
 
-        // Upload COA PDF via chunking
+        // Upload COA PDF directly to Supabase
         if (selectedPdfs) {
             console.log(`Uploading COA PDF: ${selectedPdfs.name}`);
             loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading COA PDF...<br/>${selectedPdfs.name}</p>`;
             try {
-                const urls = await uploadFileInChunks(selectedPdfs, 'pdfs');
-                coaUrls.push(...urls);
-                console.log(`COA PDF uploaded successfully: ${urls}`);
+                const { publicUrl } = await uploadFileDirect(selectedPdfs, 'pdfs');
+                coaUrls.push(publicUrl);
+                console.log(`COA PDF uploaded successfully: ${publicUrl}`);
             } catch (pdfError) {
                 console.error('Failed to upload COA PDF:', pdfError);
                 throw pdfError;
             }
         }
 
-        // Upload Labels PDF via chunking
+        // Send Labels PDF to server → convert to images → upload to Supabase
         if (selectedLabelsPdf) {
-            console.log(`Uploading Labels PDF: ${selectedLabelsPdf.name}`);
-            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading & compressing Labels PDF...<br/>${selectedLabelsPdf.name}</p>`;
+            console.log(`Processing Labels PDF: ${selectedLabelsPdf.name}`);
+            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Converting Labels PDF to images...<br/>${selectedLabelsPdf.name}</p>`;
             try {
-                const urls = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
-                imageUrls.push(...urls);
-                console.log(`Labels PDF uploaded successfully: ${urls}`);
+                // Send PDF directly to server for conversion
+                const convertRes = await fetch('/api/convert-pdf-to-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/pdf' },
+                    body: selectedLabelsPdf
+                });
+
+                if (!convertRes.ok) {
+                    const err = await convertRes.json().catch(() => ({ error: 'Conversion failed' }));
+                    throw new Error(err.error || 'Failed to convert Labels PDF');
+                }
+
+                const convertResult = await convertRes.json();
+                imageUrls.push(...convertResult.urls);
+                console.log(`Labels PDF converted to ${convertResult.pageCount} images`);
             } catch (labelError) {
-                console.error('Failed to upload Labels PDF:', labelError);
+                console.error('Failed to process Labels PDF:', labelError);
                 throw labelError;
             }
         }
