@@ -269,6 +269,41 @@ function updateSubmitButton() {
     submitBtn.disabled = !(selectedImages.length > 0 || selectedPdfs || selectedLabelsPdf) || selectedJurisdictions.length === 0;
 }
 
+// **CLIENT-SIDE PDF TO IMAGES CONVERSION**
+// Converts a PDF file to an array of image Files using PDF.js
+async function convertPdfToImagesClient(pdfFile) {
+    console.log(`Converting PDF to images: ${pdfFile.name}`);
+    const images = [];
+    
+    const arrayBuffer = await pdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const numPages = pdf.numPages;
+    console.log(`PDF has ${numPages} pages`);
+    
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Converting page ${pageNum}/${numPages}...</p>`;
+        
+        const page = await pdf.getPage(pageNum);
+        const scale = 2; // 2x for better quality
+        const viewport = page.getViewport({ scale });
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+        
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.9));
+        const imageFile = new File([blob], `${pdfFile.name}-page-${pageNum}.png`, { type: 'image/png' });
+        images.push(imageFile);
+        
+        console.log(`Page ${pageNum} converted: ${formatFileSize(blob.size)}`);
+    }
+    
+    return images;
+}
+
 // **DIRECT FILE UPLOAD VIA SIGNED URL**
 // Uploads files directly from browser to Supabase (bypasses Vercel serverless limits)
 async function uploadFileDirect(file, fileType) {
@@ -361,26 +396,24 @@ uploadForm.addEventListener('submit', async e => {
             }
         }
 
-        // Send Labels PDF to server → convert to images → upload to Supabase
+        // Convert Labels PDF to images client-side, then upload each image to Supabase
         if (selectedLabelsPdf) {
             console.log(`Processing Labels PDF: ${selectedLabelsPdf.name}`);
             loadingState.innerHTML = `<div class="loading-spinner"></div><p>Converting Labels PDF to images...<br/>${selectedLabelsPdf.name}</p>`;
             try {
-                // Send PDF directly to server for conversion
-                const convertRes = await fetch('/api/convert-pdf-to-images', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/pdf' },
-                    body: selectedLabelsPdf
-                });
+                // Step 1: Convert PDF to images in browser using PDF.js
+                const pageImages = await convertPdfToImagesClient(selectedLabelsPdf);
+                console.log(`Converted ${pageImages.length} pages to images`);
 
-                if (!convertRes.ok) {
-                    const err = await convertRes.json().catch(() => ({ error: 'Conversion failed' }));
-                    throw new Error(err.error || 'Failed to convert Labels PDF');
+                // Step 2: Upload each image to Supabase
+                for (let i = 0; i < pageImages.length; i++) {
+                    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading label image ${i + 1}/${pageImages.length}...</p>`;
+                    const { publicUrl } = await uploadFileDirect(pageImages[i], 'images');
+                    imageUrls.push(publicUrl);
+                    console.log(`Label image ${i + 1} uploaded: ${publicUrl}`);
                 }
-
-                const convertResult = await convertRes.json();
-                imageUrls.push(...convertResult.urls);
-                console.log(`Labels PDF converted to ${convertResult.pageCount} images`);
+                
+                console.log(`Labels PDF converted and uploaded: ${pageImages.length} images`);
             } catch (labelError) {
                 console.error('Failed to process Labels PDF:', labelError);
                 throw labelError;
