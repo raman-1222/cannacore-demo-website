@@ -280,9 +280,27 @@ app.post('/api/finalize-chunks', async (req, res) => {
       console.log(`Image uploaded: ${imagePath}`);
 
     } else if (fileType === 'pdfs') {
-      // Convert PDF to images using mupdf
-      console.log('Converting PDF to images...');
-      uploadedUrls = await convertPdfToImages(fileBuffer);
+      // Upload COA PDF directly to Supabase (no conversion)
+      console.log('Uploading COA PDF directly...');
+      const uniqueId = crypto.randomUUID();
+      const pdfPath = `pdfs/${uniqueId}-${metadata.fileName}`;
+
+      const { data: pdfData, error: pdfError } = await supabase.storage
+        .from('cannacore')
+        .upload(pdfPath, fileBuffer, {
+          contentType: 'application/pdf'
+        });
+
+      if (pdfError) {
+        throw new Error(`Failed to upload COA PDF: ${pdfError.message}`);
+      }
+
+      const { data: pdfUrlData } = supabase.storage
+        .from('cannacore')
+        .getPublicUrl(pdfPath);
+
+      uploadedUrls = [pdfUrlData.publicUrl];
+      console.log(`COA PDF uploaded: ${pdfPath} (${(fileBuffer.length / 1024).toFixed(0)} KB)`);
 
     } else if (fileType === 'labels-pdfs') {
       // Convert labels PDF to images

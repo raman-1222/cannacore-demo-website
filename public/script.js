@@ -464,7 +464,7 @@ uploadForm.addEventListener('submit', async e => {
         // Upload COA PDF via chunking
         if (selectedPdfs) {
             console.log(`Uploading COA PDF: ${selectedPdfs.name}`);
-            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading & compressing COA PDF...<br/>${selectedPdfs.name}</p>`;
+            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading COA PDF...<br/>${selectedPdfs.name}</p>`;
             try {
                 const urls = await uploadFileInChunks(selectedPdfs, 'pdfs');
                 coaUrls.push(...urls);
