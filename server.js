@@ -5,7 +5,7 @@ const axios = require('axios');
 const path = require('path');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const { createClient } = require('@supabase/supabase-js');
+const { put, del } = require('@vercel/blob');
 const sharp = require('sharp');
 const crypto = require('crypto');
 
@@ -15,28 +15,13 @@ const PORT = process.env.PORT || 3000;
 // Trust proxy for Vercel/reverse proxies (required for express-rate-limit)
 app.set('trust proxy', 1);
 
-// Initialize Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// Supabase bucket name
-const BUCKET_NAME = 'cannacore';
-
-// Utility function to delete file from Supabase bucket
-async function deleteFileFromSupabase(fileName) {
+// Utility function to delete file from Vercel Blob
+async function deleteFileFromBlob(url) {
   try {
-    const { error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .remove([fileName]);
-
-    if (error) {
-      throw new Error(`Delete failed: ${error.message}`);
-    }
-
+    await del(url);
     return true;
   } catch (error) {
-    console.error(`[SUPABASE] Delete error for ${fileName}:`, error.message);
+    console.error(`[BLOB] Delete error for ${url}:`, error.message);
     return false;
   }
 }
@@ -78,25 +63,14 @@ async function convertPdfToImages(pdfBuffer) {
         // Generate unique filename
         const uniqueImageId = crypto.randomUUID();
         const imageFilename = `pdf-pages/${uniqueImageId}-page-${pageNum + 1}.png`;
-        const imagePath = `images/${imageFilename}`;
 
-        // Upload to Supabase
-        const { data: imageData, error: imageError } = await supabase.storage
-          .from('cannacore')
-          .upload(imagePath, imageBuffer, {
-            contentType: 'image/png'
-          });
+        // Upload to Vercel Blob
+        const blob = await put(imageFilename, imageBuffer, {
+          access: 'public',
+          contentType: 'image/png'
+        });
 
-        if (imageError) {
-          throw new Error(`Failed to upload page image: ${imageError.message}`);
-        }
-
-        // Get public URL
-        const { data: imageUrlData } = supabase.storage
-          .from('cannacore')
-          .getPublicUrl(imagePath);
-
-        imageUrls.push(imageUrlData.publicUrl);
+        imageUrls.push(blob.url);
         console.log(`Page ${pageNum + 1}/${pageCount} uploaded: ${imageFilename} (${(imageBuffer.length / 1024).toFixed(0)} KB)`);
       } catch (pageError) {
         console.error(`Error converting page ${pageNum + 1}:`, pageError);
@@ -142,7 +116,7 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
 
-// Configure multer for file uploads - use memory storage for Supabase
+// Configure multer for file uploads - use memory storage for Vercel Blob
 const storage = multer.memoryStorage();
 
 const upload = multer({
@@ -215,7 +189,7 @@ app.post('/api/upload-chunk', express.raw({ type: 'application/octet-stream', li
   }
 });
 
-// Finalize upload - combine chunks and upload to Supabase
+// Finalize upload - combine chunks and upload to Vercel Blob
 app.post('/api/finalize-chunks', async (req, res) => {
   try {
     const { uploadId, fileType } = req.body;
@@ -261,48 +235,30 @@ app.post('/api/finalize-chunks', async (req, res) => {
     let uploadedUrls = [];
 
     if (fileType === 'images') {
-      // Upload image directly to Supabase
+      // Upload image directly to Vercel Blob
       const uniqueId = crypto.randomUUID();
       const imagePath = `images/${uniqueId}-${fileName}`;
 
-      const { data: imageData, error: imageError } = await supabase.storage
-        .from('cannacore')
-        .upload(imagePath, fileBuffer, {
-          contentType: 'image/*'
-        });
+      const blob = await put(imagePath, fileBuffer, {
+        access: 'public',
+        contentType: 'image/*'
+      });
 
-      if (imageError) {
-        throw new Error(`Failed to upload image: ${imageError.message}`);
-      }
-
-      const { data: imageUrlData } = supabase.storage
-        .from('cannacore')
-        .getPublicUrl(imagePath);
-
-      uploadedUrls = [imageUrlData.publicUrl];
+      uploadedUrls = [blob.url];
       console.log(`Image uploaded: ${imagePath}`);
 
     } else if (fileType === 'pdfs') {
-      // Upload COA PDF directly to Supabase (no conversion)
+      // Upload COA PDF directly to Vercel Blob (no conversion)
       console.log('Uploading COA PDF directly...');
       const uniqueId = crypto.randomUUID();
       const pdfPath = `pdfs/${uniqueId}-${metadata.fileName}`;
 
-      const { data: pdfData, error: pdfError } = await supabase.storage
-        .from('cannacore')
-        .upload(pdfPath, fileBuffer, {
-          contentType: 'application/pdf'
-        });
+      const blob = await put(pdfPath, fileBuffer, {
+        access: 'public',
+        contentType: 'application/pdf'
+      });
 
-      if (pdfError) {
-        throw new Error(`Failed to upload COA PDF: ${pdfError.message}`);
-      }
-
-      const { data: pdfUrlData } = supabase.storage
-        .from('cannacore')
-        .getPublicUrl(pdfPath);
-
-      uploadedUrls = [pdfUrlData.publicUrl];
+      uploadedUrls = [blob.url];
       console.log(`COA PDF uploaded: ${pdfPath} (${(fileBuffer.length / 1024).toFixed(0)} KB)`);
 
     } else if (fileType === 'labels-pdfs') {
@@ -433,7 +389,7 @@ app.post('/api/check-compliance-urls', apiLimiter, async (req, res) => {
     }
 
     // Store uploaded file paths for cleanup after results are received
-    // Extract Supabase storage paths from public URLs
+    // Extract storage paths from public URLs
     const extractFilePath = (url) => {
       if (!url) return null;
       const match = url.match(/\/cannacore\/(.+)$/);
@@ -561,7 +517,7 @@ app.get('/api/results/:requestId', async (req, res) => {
 
         console.log('Extracted actualResult keys:', Object.keys(actualResult || {}));
 
-        // Delete uploaded files from Supabase after processing
+        // Delete uploaded files from Vercel Blob after processing
         setImmediate(async () => {
           try {
             const uploadedData = uploadedFilesMap.get(requestId);
@@ -576,7 +532,7 @@ app.get('/api/results/:requestId', async (req, res) => {
                 
                 for (const filePath of filePaths) {
                   try {
-                    await deleteFileFromSupabase(filePath);
+                    await deleteFileFromBlob(filePath);
                     console.log(`[CLEANUP] Deleted: ${filePath}`);
                   } catch (err) {
                     console.error(`[CLEANUP] Failed to delete ${filePath}:`, err.message);
@@ -639,20 +595,13 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       });
     }
 
-    // Check if Supabase is configured
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({
-        error: 'Supabase configuration is missing. Please check environment variables.'
-      });
-    }
-
     const images = req.files.images;
     const pdf = req.files.pdf[0];
 
-    console.log('=== SUPABASE UPLOAD ===');
-    console.log('Uploading images to Supabase...');
+    console.log('=== BLOB UPLOAD ===');
+    console.log('Uploading images to Vercel Blob...');
 
-    // Upload images to Supabase Storage
+    // Upload images to Vercel Blob
     const imageUrls = [];
     const uploadedImagePaths = [];
     
@@ -661,23 +610,13 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       const imageFilename = `image-${uniqueSuffix}${path.extname(image.originalname)}`;
       const imagePath = `images/${imageFilename}`;
       
-      const { data: imageData, error: imageError } = await supabase.storage
-        .from('cannacore')
-        .upload(imagePath, image.buffer, {
-          contentType: image.mimetype
-        });
+      const blob = await put(imagePath, image.buffer, {
+        access: 'public',
+        contentType: image.mimetype
+      });
       
-      if (imageError) {
-        throw new Error(`Failed to upload image: ${imageError.message}`);
-      }
-      
-      // Get public URL
-      const { data: imageUrlData } = supabase.storage
-        .from('cannacore')
-        .getPublicUrl(imagePath);
-      
-      imageUrls.push(imageUrlData.publicUrl);
-      uploadedImagePaths.push(imagePath);
+      imageUrls.push(blob.url);
+      uploadedImagePaths.push(blob.url);
     }
 
     // Convert PDF to images and upload them
@@ -869,11 +808,11 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
       });
 
     } finally {
-      // Cleanup files from Supabase after API call (whether success or failure)
-      console.log('Cleaning up files from Supabase...');
-      await supabase.storage
-        .from('cannacore')
-        .remove(allUploadedPaths);
+      // Cleanup files from Vercel Blob after API call (whether success or failure)
+      console.log('Cleaning up files from Vercel Blob...');
+      for (const url of allUploadedPaths) {
+        await deleteFileFromBlob(url);
+      }
     }
 
   } catch (error) {
@@ -881,9 +820,9 @@ app.post('/api/check-compliance', apiLimiter, upload.fields([
     
     // Attempt cleanup on error
     try {
-      await supabase.storage
-        .from('cannacore')
-        .remove(allUploadedPaths);
+      for (const url of allUploadedPaths) {
+        await deleteFileFromBlob(url);
+      }
     } catch (cleanupError) {
       console.error('Failed to cleanup files:', cleanupError);
     }
@@ -899,56 +838,51 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Generate signed upload URL for direct browser-to-Supabase uploads
-app.post('/api/get-upload-url', async (req, res) => {
+// Proxy upload endpoint - uploads file through server to Vercel Blob
+app.post('/api/upload-file', upload.single('file'), async (req, res) => {
   try {
-    const { fileName, fileType } = req.body;
+    const { fileType } = req.body;
+    const file = req.file;
 
-    if (!fileName || !fileType) {
-      return res.status(400).json({ error: 'Missing fileName or fileType' });
+    if (!file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+    if (!fileType) {
+      return res.status(400).json({ error: 'Missing fileType' });
     }
 
     const uniqueId = crypto.randomUUID();
     let storagePath;
     if (fileType === 'images') {
-      storagePath = `images/${uniqueId}-${fileName}`;
+      storagePath = `images/${uniqueId}-${file.originalname}`;
     } else if (fileType === 'pdfs') {
-      storagePath = `pdfs/${uniqueId}-${fileName}`;
+      storagePath = `pdfs/${uniqueId}-${file.originalname}`;
     } else if (fileType === 'labels-pdfs') {
-      storagePath = `labels-pdfs/${uniqueId}-${fileName}`;
+      storagePath = `labels-pdfs/${uniqueId}-${file.originalname}`;
     } else {
       return res.status(400).json({ error: 'Invalid fileType' });
     }
 
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .createSignedUploadUrl(storagePath);
+    console.log(`[PROXY UPLOAD] Uploading ${file.originalname} (${(file.size / 1024).toFixed(0)} KB) as ${fileType}`);
 
-    if (error) {
-      console.error('[SIGNED URL] Error:', error.message);
-      return res.status(500).json({ error: `Failed to create upload URL: ${error.message}` });
-    }
+    const blob = await put(storagePath, file.buffer, {
+      access: 'public',
+      contentType: file.mimetype
+    });
 
-    const { data: publicUrlData } = supabase.storage
-      .from(BUCKET_NAME)
-      .getPublicUrl(storagePath);
-
-    console.log(`[SIGNED URL] Created for ${fileType}: ${storagePath}`);
-
+    console.log(`[PROXY UPLOAD] Success: ${storagePath}`);
     res.json({
       success: true,
-      signedUrl: data.signedUrl,
-      token: data.token,
-      path: storagePath,
-      publicUrl: publicUrlData.publicUrl
+      publicUrl: blob.url,
+      path: blob.url
     });
   } catch (error) {
-    console.error('[SIGNED URL] Error:', error);
+    console.error('[PROXY UPLOAD] Error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Convert PDF to images (receives raw PDF, converts with mupdf, uploads images to Supabase)
+// Convert PDF to images (receives raw PDF, converts with mupdf, uploads images to Vercel Blob)
 app.post('/api/convert-pdf-to-images', express.raw({ type: 'application/pdf', limit: '50mb' }), async (req, res) => {
   try {
     if (!req.body || req.body.length === 0) {
@@ -958,13 +892,43 @@ app.post('/api/convert-pdf-to-images', express.raw({ type: 'application/pdf', li
     const pdfBuffer = req.body;
     console.log(`[CONVERT] Received PDF: ${(pdfBuffer.length / 1024).toFixed(0)} KB`);
 
-    // Convert PDF to images using mupdf and upload to Supabase
+    // Convert PDF to images using mupdf and upload to Vercel Blob
     const imageUrls = await convertPdfToImages(pdfBuffer);
     console.log(`[CONVERT] Converted ${imageUrls.length} pages`);
 
     res.json({ success: true, urls: imageUrls, pageCount: imageUrls.length });
   } catch (error) {
     console.error('[CONVERT] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cleanup endpoint - deletes uploaded files from Vercel Blob
+app.post('/api/cleanup-files', async (req, res) => {
+  try {
+    const { filePaths } = req.body;
+
+    if (!filePaths || !Array.isArray(filePaths) || filePaths.length === 0) {
+      return res.json({ success: true, deleted: 0 });
+    }
+
+    console.log(`[CLEANUP] Deleting ${filePaths.length} files...`);
+    let deleted = 0;
+
+    for (const url of filePaths) {
+      try {
+        await deleteFileFromBlob(url);
+        deleted++;
+        console.log(`[CLEANUP] Deleted: ${url}`);
+      } catch (err) {
+        console.error(`[CLEANUP] Failed to delete ${url}:`, err.message);
+      }
+    }
+
+    console.log(`[CLEANUP] Done. Deleted ${deleted}/${filePaths.length} files`);
+    res.json({ success: true, deleted });
+  } catch (error) {
+    console.error('[CLEANUP] Error:', error);
     res.status(500).json({ error: error.message });
   }
 });

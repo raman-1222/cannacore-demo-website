@@ -308,40 +308,27 @@ async function convertPdfToImagesClient(pdfFile) {
 // Uploads files directly from browser to Supabase (bypasses Vercel serverless limits)
 async function uploadFileDirect(file, fileType) {
     console.log(`Starting direct upload: ${file.name} (${formatFileSize(file.size)}) as ${fileType}`);
-    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Preparing upload for ${file.name}...</p>`;
+    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...</p>`;
 
-    // Get signed URL from server
-    const urlRes = await fetch('/api/get-upload-url', {
+    // Use proxy endpoint to upload through server (avoids browser SSL/CORS issues)
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('fileType', fileType);
+
+    const uploadRes = await fetch('/api/upload-file', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName: file.name, fileType: fileType })
-    });
-
-    if (!urlRes.ok) {
-        const err = await urlRes.json().catch(() => ({ error: 'Failed to get upload URL' }));
-        throw new Error(err.error || 'Failed to get upload URL');
-    }
-
-    const { signedUrl, publicUrl, path } = await urlRes.json();
-    console.log(`Got signed URL for ${file.name}`);
-
-    // Upload directly to Supabase
-    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...<br/>${formatFileSize(file.size)}</p>`;
-
-    const uploadRes = await fetch(signedUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file
+        body: formData
     });
 
     if (!uploadRes.ok) {
-        const errText = await uploadRes.text().catch(() => 'Upload failed');
-        console.error('Supabase upload error:', errText);
-        throw new Error(`Failed to upload ${file.name}`);
+        const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+        console.error('Upload error:', err);
+        throw new Error(err.error || `Failed to upload ${file.name}`);
     }
 
-    console.log(`File uploaded: ${file.name} → ${publicUrl}`);
-    return { publicUrl, path };
+    const result = await uploadRes.json();
+    console.log(`File uploaded: ${file.name} → ${result.publicUrl}`);
+    return { publicUrl: result.publicUrl, path: result.path };
 }
 
 // HANDLE SUBMIT
@@ -462,7 +449,9 @@ uploadForm.addEventListener('submit', async e => {
             console.log('Got requestId, starting polling:', json.requestId);
             // Show checking compliance spinner immediately
             loadingState.innerHTML = '<div class="loading-spinner"></div><p>Checking compliance...</p>';
-            await pollForResults(json.requestId);
+            // Pass all uploaded file URLs for cleanup after results
+            const allUploadedFiles = [...imageUrls, ...coaUrls.filter(u => u !== "not provided")];
+            await pollForResults(json.requestId, allUploadedFiles);
         } else {
             // Synchronous response with results
             const result = json?.result || json;
@@ -477,9 +466,26 @@ uploadForm.addEventListener('submit', async e => {
 });
 
 // Function to poll for results
-async function pollForResults(requestId) {
+async function pollForResults(requestId, uploadedFilePaths = []) {
     let pollCount = 0;
     const pollInterval = 1 * 60 * 1000; // 1 minute = 60,000ms
+
+    // Helper to cleanup uploaded files
+    const cleanupFiles = async () => {
+        if (uploadedFilePaths.length > 0) {
+            console.log(`Cleaning up ${uploadedFilePaths.length} uploaded files...`);
+            try {
+                await fetch('/api/cleanup-files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filePaths: uploadedFilePaths })
+                });
+                console.log('Cleanup complete');
+            } catch (e) {
+                console.error('Cleanup failed:', e);
+            }
+        }
+    };
 
     while (true) {
         pollCount++;
@@ -500,18 +506,24 @@ async function pollForResults(requestId) {
                 const actualResult = resultData.data.output?.result || resultData.data;
                 console.log('Storing result:', actualResult);
                 sessionStorage.setItem("complianceResults", JSON.stringify(actualResult));
+                
+                // Cleanup uploaded files from Supabase
+                await cleanupFiles();
+                
                 loadingState.style.display = "none";
                 window.location.href = "/results.html";
                 return;
             } else if (resultData.status === 'failed') {
-                // Workflow failed - display error to user
+                // Workflow failed - cleanup and display error
+                await cleanupFiles();
                 const errorMessage = resultData.error || 'Compliance check failed. Please try again.';
                 console.error(`Workflow failed: ${errorMessage}`);
                 loadingState.style.display = "none";
                 showError(`❌ ${errorMessage}`);
                 throw new Error(errorMessage);
             } else if (resultData.error) {
-                // Other error occurred
+                // Other error occurred - cleanup
+                await cleanupFiles();
                 console.error(`Error received: ${resultData.error}`);
                 loadingState.style.display = "none";
                 showError(`❌ ${resultData.error}`);
