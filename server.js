@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const { put, del } = require('@vercel/blob');
 const sharp = require('sharp');
 const crypto = require('crypto');
+const { Document, Packer, Paragraph, TextRun } = require('docx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -929,6 +930,41 @@ app.post('/api/cleanup-files', async (req, res) => {
     res.json({ success: true, deleted });
   } catch (error) {
     console.error('[CLEANUP] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Download report as DOCX
+app.post('/api/download-report', async (req, res) => {
+  try {
+    const { content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    // Split content into lines and create paragraphs
+    const lines = content.split('\n');
+    const children = lines.map(line => {
+      return new Paragraph({
+        children: [new TextRun({ text: line })],
+      });
+    });
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: children
+      }]
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=compliance-report.docx');
+    res.send(buffer);
+  } catch (error) {
+    console.error('[DOWNLOAD-REPORT] Error:', error);
     res.status(500).json({ error: error.message });
   }
 });

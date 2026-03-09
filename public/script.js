@@ -269,66 +269,158 @@ function updateSubmitButton() {
     submitBtn.disabled = !(selectedImages.length > 0 || selectedPdfs || selectedLabelsPdf) || selectedJurisdictions.length === 0;
 }
 
-// **CLIENT-SIDE PDF TO IMAGES CONVERSION**
-// Converts a PDF file to an array of image Files using PDF.js
-async function convertPdfToImagesClient(pdfFile) {
-    console.log(`Converting PDF to images: ${pdfFile.name}`);
-    const images = [];
-    
-    const arrayBuffer = await pdfFile.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const numPages = pdf.numPages;
-    console.log(`PDF has ${numPages} pages`);
-    
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Converting page ${pageNum}/${numPages}...</p>`;
-        
-        const page = await pdf.getPage(pageNum);
-        const scale = 2; // 2x for better quality
-        const viewport = page.getViewport({ scale });
-        
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        
-        await page.render({ canvasContext: context, viewport: viewport }).promise;
-        
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.9));
-        const imageFile = new File([blob], `${pdfFile.name}-page-${pageNum}.png`, { type: 'image/png' });
-        images.push(imageFile);
-        
-        console.log(`Page ${pageNum} converted: ${formatFileSize(blob.size)}`);
+// **CHUNKED FILE UPLOAD UTILITY**
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks (safe margin for Vercel 6MB limit)
+
+async function uploadFileInChunks(file, fileType) {
+    const uploadId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    let uploadedBytes = 0;
+
+    console.log(`Starting chunked upload: ${file.name}, ${totalChunks} chunks, ${CHUNK_SIZE / 1024 / 1024}MB per chunk`);
+
+    for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice(start, end);
+
+        console.log(`Uploading chunk ${i + 1}/${totalChunks}: ${start} - ${end} bytes`);
+        loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...<br/>${formatFileSize(end)} / ${formatFileSize(file.size)}</p>`;
+
+        try {
+            const response = await fetch('/api/upload-chunk', {
+                method: 'POST',
+                headers: {
+                    'x-upload-id': uploadId,
+                    'x-chunk-index': i,
+                    'x-total-chunks': totalChunks,
+                    'x-file-name': file.name,
+                    'x-file-type': fileType,
+                    'Content-Type': 'application/octet-stream'
+                },
+                body: chunk
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || `Failed to upload chunk ${i + 1}`);
+            }
+
+            const result = await response.json();
+            uploadedBytes = end;
+            console.log(`Chunk ${i + 1}/${totalChunks} uploaded successfully. Progress: ${result.progress}%`);
+
+        } catch (error) {
+            console.error(`Error uploading chunk ${i + 1}:`, error);
+            // Retry once on failure
+            console.log(`Retrying chunk ${i + 1}...`);
+            try {
+                const retryResponse = await fetch('/api/upload-chunk', {
+                    method: 'POST',
+                    headers: {
+                        'x-upload-id': uploadId,
+                        'x-chunk-index': i,
+                        'x-total-chunks': totalChunks,
+                        'x-file-name': file.name,
+                        'x-file-type': fileType,
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: chunk
+                });
+
+                if (!retryResponse.ok) {
+                    throw new Error(`Retry also failed for chunk ${i + 1}`);
+                }
+
+                const retryResult = await retryResponse.json();
+                console.log(`Chunk ${i + 1} uploaded on retry. Progress: ${retryResult.progress}%`);
+            } catch (retryError) {
+                console.error(`Chunk ${i + 1} failed even after retry:`, retryError);
+                throw retryError;
+            }
+        }
     }
-    
-    return images;
-}
 
-// **DIRECT FILE UPLOAD VIA SIGNED URL**
-// Uploads files directly from browser to Supabase (bypasses Vercel serverless limits)
-async function uploadFileDirect(file, fileType) {
-    console.log(`Starting direct upload: ${file.name} (${formatFileSize(file.size)}) as ${fileType}`);
-    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading ${file.name}...</p>`;
+    // Finalize the upload
+    console.log('All chunks uploaded, finalizing...');
+    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Finalizing ${file.name}...</p>`;
 
-    // Use proxy endpoint to upload through server (avoids browser SSL/CORS issues)
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('fileType', fileType);
+    let finalizeAttempts = 0;
+    const maxFinalizeAttempts = 3;
 
-    const uploadRes = await fetch('/api/upload-file', {
-        method: 'POST',
-        body: formData
-    });
+    while (finalizeAttempts < maxFinalizeAttempts) {
+        try {
+            finalizeAttempts++;
+            const response = await fetch('/api/finalize-chunks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uploadId: uploadId,
+                    fileType: fileType
+                })
+            });
 
-    if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
-        console.error('Upload error:', err);
-        throw new Error(err.error || `Failed to upload ${file.name}`);
+            if (!response.ok) {
+                const error = await response.json();
+                
+                // If some chunks are missing, retry uploading them
+                if (error.missingChunks && error.missingChunks.length > 0) {
+                    console.log('Retrying missing chunks:', error.missingChunks);
+                    
+                    for (const chunkIdx of error.missingChunks) {
+                        const start = chunkIdx * CHUNK_SIZE;
+                        const end = Math.min(start + CHUNK_SIZE, file.size);
+                        const chunkData = file.slice(start, end);
+                        
+                        console.log(`Retrying missing chunk ${chunkIdx}...`);
+                        const retryResponse = await fetch('/api/upload-chunk', {
+                            method: 'POST',
+                            headers: {
+                                'x-upload-id': uploadId,
+                                'x-chunk-index': chunkIdx,
+                                'x-total-chunks': totalChunks,
+                                'x-file-name': file.name,
+                                'x-file-type': fileType,
+                                'Content-Type': 'application/octet-stream'
+                            },
+                            body: chunkData
+                        });
+                        
+                        if (!retryResponse.ok) {
+                            throw new Error(`Failed to retry chunk ${chunkIdx}`);
+                        }
+                    }
+                    
+                    // Wait a moment before retrying finalization
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue; // Retry finalization
+                }
+                
+                throw new Error(error.error || 'Failed to finalize upload');
+            }
+
+            const result = await response.json();
+            if (result.urls && result.urls.length > 0) {
+                console.log(`File finalized. ${result.pageCount ? result.pageCount + ' page images' : '1 file'} uploaded.`);
+                if (result.originalSize) {
+                    console.log(`PDF compressed: ${(result.originalSize / 1024 / 1024).toFixed(2)}MB → ${(result.size / 1024 / 1024).toFixed(2)}MB`);
+                }
+                return result.urls; // Return array of image URLs
+            }
+            console.log(`File finalized and uploaded to: ${result.url}`);
+            return [result.url]; // Wrap single URL in array for consistency
+
+        } catch (error) {
+            console.error(`Finalization attempt ${finalizeAttempts} failed:`, error);
+            if (finalizeAttempts < maxFinalizeAttempts) {
+                console.log(`Retrying finalization (${finalizeAttempts}/${maxFinalizeAttempts})...`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+            } else {
+                throw error;
+            }
+        }
     }
 
-    const result = await uploadRes.json();
-    console.log(`File uploaded: ${file.name} → ${result.publicUrl}`);
-    return { publicUrl: result.publicUrl, path: result.path };
 }
 
 // HANDLE SUBMIT
@@ -350,7 +442,7 @@ uploadForm.addEventListener('submit', async e => {
         const imageUrls = [];
         const coaUrls = [];
 
-        // Upload all images directly to Supabase
+        // Upload all images via chunking (ensures compatibility)
         if (selectedImages.length > 0) {
             console.log(`Uploading ${selectedImages.length} image(s)...`);
             for (let idx = 0; idx < selectedImages.length; idx++) {
@@ -359,9 +451,9 @@ uploadForm.addEventListener('submit', async e => {
                 loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading image ${idx + 1}/${selectedImages.length}...<br/>${img.name}</p>`;
                 
                 try {
-                    const { publicUrl } = await uploadFileDirect(img, 'images');
-                    imageUrls.push(publicUrl);
-                    console.log(`Image ${idx + 1} uploaded successfully: ${publicUrl}`);
+                    const urls = await uploadFileInChunks(img, 'images');
+                    imageUrls.push(...urls);
+                    console.log(`Image ${idx + 1} uploaded successfully: ${urls}`);
                 } catch (imgError) {
                     console.error(`Failed to upload image ${idx + 1}:`, imgError);
                     throw imgError;
@@ -369,40 +461,30 @@ uploadForm.addEventListener('submit', async e => {
             }
         }
 
-        // Upload COA PDF directly to Supabase
+        // Upload COA PDF via chunking
         if (selectedPdfs) {
             console.log(`Uploading COA PDF: ${selectedPdfs.name}`);
             loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading COA PDF...<br/>${selectedPdfs.name}</p>`;
             try {
-                const { publicUrl } = await uploadFileDirect(selectedPdfs, 'pdfs');
-                coaUrls.push(publicUrl);
-                console.log(`COA PDF uploaded successfully: ${publicUrl}`);
+                const urls = await uploadFileInChunks(selectedPdfs, 'pdfs');
+                coaUrls.push(...urls);
+                console.log(`COA PDF uploaded successfully: ${urls}`);
             } catch (pdfError) {
                 console.error('Failed to upload COA PDF:', pdfError);
                 throw pdfError;
             }
         }
 
-        // Convert Labels PDF to images client-side, then upload each image to Supabase
+        // Upload Labels PDF via chunking
         if (selectedLabelsPdf) {
-            console.log(`Processing Labels PDF: ${selectedLabelsPdf.name}`);
-            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Converting Labels PDF to images...<br/>${selectedLabelsPdf.name}</p>`;
+            console.log(`Uploading Labels PDF: ${selectedLabelsPdf.name}`);
+            loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading & compressing Labels PDF...<br/>${selectedLabelsPdf.name}</p>`;
             try {
-                // Step 1: Convert PDF to images in browser using PDF.js
-                const pageImages = await convertPdfToImagesClient(selectedLabelsPdf);
-                console.log(`Converted ${pageImages.length} pages to images`);
-
-                // Step 2: Upload each image to Supabase
-                for (let i = 0; i < pageImages.length; i++) {
-                    loadingState.innerHTML = `<div class="loading-spinner"></div><p>Uploading label image ${i + 1}/${pageImages.length}...</p>`;
-                    const { publicUrl } = await uploadFileDirect(pageImages[i], 'images');
-                    imageUrls.push(publicUrl);
-                    console.log(`Label image ${i + 1} uploaded: ${publicUrl}`);
-                }
-                
-                console.log(`Labels PDF converted and uploaded: ${pageImages.length} images`);
+                const urls = await uploadFileInChunks(selectedLabelsPdf, 'labels-pdfs');
+                imageUrls.push(...urls);
+                console.log(`Labels PDF uploaded successfully: ${urls}`);
             } catch (labelError) {
-                console.error('Failed to process Labels PDF:', labelError);
+                console.error('Failed to upload Labels PDF:', labelError);
                 throw labelError;
             }
         }
@@ -416,7 +498,7 @@ uploadForm.addEventListener('submit', async e => {
             method: "POST",
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                imageurl: imageUrls,
+                imageurl: imageUrls.length > 0 ? imageUrls : ["not_provided"],
                 coaurl: coaUrls.length > 0 ? coaUrls : ["not provided"],
                 jurisdictions: selectedJurisdictions,
                 date: new Date().toLocaleDateString(),
@@ -449,9 +531,7 @@ uploadForm.addEventListener('submit', async e => {
             console.log('Got requestId, starting polling:', json.requestId);
             // Show checking compliance spinner immediately
             loadingState.innerHTML = '<div class="loading-spinner"></div><p>Checking compliance...</p>';
-            // Pass all uploaded file URLs for cleanup after results
-            const allUploadedFiles = [...imageUrls, ...coaUrls.filter(u => u !== "not provided")];
-            await pollForResults(json.requestId, allUploadedFiles);
+            await pollForResults(json.requestId);
         } else {
             // Synchronous response with results
             const result = json?.result || json;
@@ -466,26 +546,9 @@ uploadForm.addEventListener('submit', async e => {
 });
 
 // Function to poll for results
-async function pollForResults(requestId, uploadedFilePaths = []) {
+async function pollForResults(requestId) {
     let pollCount = 0;
     const pollInterval = 1 * 60 * 1000; // 1 minute = 60,000ms
-
-    // Helper to cleanup uploaded files
-    const cleanupFiles = async () => {
-        if (uploadedFilePaths.length > 0) {
-            console.log(`Cleaning up ${uploadedFilePaths.length} uploaded files...`);
-            try {
-                await fetch('/api/cleanup-files', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filePaths: uploadedFilePaths })
-                });
-                console.log('Cleanup complete');
-            } catch (e) {
-                console.error('Cleanup failed:', e);
-            }
-        }
-    };
 
     while (true) {
         pollCount++;
@@ -506,24 +569,18 @@ async function pollForResults(requestId, uploadedFilePaths = []) {
                 const actualResult = resultData.data.output?.result || resultData.data;
                 console.log('Storing result:', actualResult);
                 sessionStorage.setItem("complianceResults", JSON.stringify(actualResult));
-                
-                // Cleanup uploaded files from Supabase
-                await cleanupFiles();
-                
                 loadingState.style.display = "none";
                 window.location.href = "/results.html";
                 return;
             } else if (resultData.status === 'failed') {
-                // Workflow failed - cleanup and display error
-                await cleanupFiles();
+                // Workflow failed - display error to user
                 const errorMessage = resultData.error || 'Compliance check failed. Please try again.';
                 console.error(`Workflow failed: ${errorMessage}`);
                 loadingState.style.display = "none";
                 showError(`❌ ${errorMessage}`);
                 throw new Error(errorMessage);
             } else if (resultData.error) {
-                // Other error occurred - cleanup
-                await cleanupFiles();
+                // Other error occurred
                 console.error(`Error received: ${resultData.error}`);
                 loadingState.style.display = "none";
                 showError(`❌ ${resultData.error}`);
@@ -692,10 +749,14 @@ function displayLabels(labelsData) {
             statusColor = "orange";
         }
         
+        // Normalise rule_summary: AI sometimes outputs "coa not available" in label items
+        const labelRuleSummary = (item.rule_summary || "None provided")
+            .replace(/\bcoa not available\b/gi, "label not available");
+
         card.innerHTML = `
             <p style="color:black; width: 100%; margin: 0 0 12px 0; padding: 0; box-sizing: border-box; word-wrap: break-word; overflow-wrap: break-word;"><strong>${serialNumber}. Ref:</strong> ${getRefWithHyperlink(item.ref)}</p>
             <p style="color:${statusColor};font-weight:bold; width: 100%; margin: 0 0 12px 0; padding: 0; box-sizing: border-box; word-wrap: break-word; overflow-wrap: break-word;">${complianceStatus}</p>
-            <p style="color:black; width: 100%; margin: 0 0 12px 0; padding: 0; box-sizing: border-box; word-wrap: break-word; overflow-wrap: break-word;"><strong>Rule Summary:</strong> ${escapeHtml(item.rule_summary || "None provided")}</p>
+            <p style="color:black; width: 100%; margin: 0 0 12px 0; padding: 0; box-sizing: border-box; word-wrap: break-word; overflow-wrap: break-word;"><strong>Rule Summary:</strong> ${escapeHtml(labelRuleSummary)}</p>
             <p style="color:black; width: 100%; margin: 0 0 12px 0; padding: 0; box-sizing: border-box; word-wrap: break-word; overflow-wrap: break-word;"><strong>Evidence:</strong> ${escapeHtml(item.evidence || "None provided")}</p>
             ${item.suggested_fix ? `<p style="color:black; width: 100%; margin: 0 0 12px 0; padding: 0; box-sizing: border-box; word-wrap: break-word; overflow-wrap: break-word;"><strong>Suggested Fix:</strong> ${escapeHtml(item.suggested_fix)}</p>` : ""}
         `;
